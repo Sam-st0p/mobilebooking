@@ -1,9 +1,14 @@
 // lib/routing/app_router.dart
 
 import 'package:go_router/go_router.dart';
+import '../models/booking.dart';
 import '../screens/auth/sign_in_screen.dart';
 import '../screens/auth/sign_up_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
+import '../screens/booking/booking_confirmation_screen.dart';
+import '../screens/booking/booking_detail_screen.dart';
+import '../screens/booking/bookings_list_screen.dart';
+import '../screens/booking/reserve_screen.dart';
 import '../screens/catalog/catalog_screen.dart';
 import '../screens/catalog/product_detail_screen.dart';
 import '../screens/coming_soon_screen.dart';
@@ -23,10 +28,7 @@ final appRouter = GoRouter(
         GoRoute(path: '/catalog', builder: (context, state) => const CatalogScreen()),
         GoRoute(
           path: '/account/bookings',
-          builder: (context, state) => const ComingSoonScreen(
-            title: 'My Bookings',
-            note: 'Booking list + detail (app/account/bookings) — phase 2.',
-          ),
+          builder: (context, state) => const BookingsListScreen(),
         ),
         GoRoute(
           path: '/account/profile',
@@ -53,10 +55,17 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/catalog/:id/reserve',
-      builder: (context, state) => ComingSoonScreen(
-        title: 'Reserve',
-        note: 'Multi-step reservation flow (dates → requirements → agreement → '
-            'payment → confirmation) — app/catalog/[id]/reserve — phase 2.',
+      builder: (context, state) => ReserveScreen(idOrSlug: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/booking-confirmation',
+      builder: (context, state) => BookingConfirmationScreen(booking: state.extra as Booking),
+    ),
+    GoRoute(
+      path: '/account/bookings/:id',
+      builder: (context, state) => BookingDetailScreen(
+        bookingId: state.pathParameters['id']!,
+        initialBooking: state.extra as Booking?,
       ),
     ),
     GoRoute(path: '/sign-in', builder: (context, state) => const SignInScreen()),
