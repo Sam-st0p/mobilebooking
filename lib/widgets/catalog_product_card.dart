@@ -39,8 +39,9 @@ class CatalogProductCard extends StatelessWidget {
             children: [
               GestureDetector(
                 onTap: onViewDetails,
-                child: AspectRatio(
-                  aspectRatio: 1.1,
+                child: SizedBox(
+                  height: 120,
+                  width: double.infinity,
                   child: product.image.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: product.image,
@@ -102,6 +103,8 @@ class CatalogProductCard extends StatelessWidget {
                 Text(
                   product.category,
                   style: const TextStyle(fontSize: 11, color: AppColors.charcoal, letterSpacing: 0.4),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 GestureDetector(
@@ -114,7 +117,12 @@ class CatalogProductCard extends StatelessWidget {
                   ),
                 ),
                 if (product.brand != null)
-                  Text(product.brand!, style: const TextStyle(fontSize: 12, color: AppColors.charcoal)),
+                  Text(
+                    product.brand!,
+                    style: const TextStyle(fontSize: 12, color: AppColors.charcoal),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -140,24 +148,39 @@ class CatalogProductCard extends StatelessWidget {
                   totalUnits: product.totalUnits,
                   availableUnits: product.availableUnits,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
                         onPressed: onViewDetails,
-                        style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
-                        child: const Text('View Details', style: TextStyle(fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'View Details',
+                          style: TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: ElevatedButton(
                         onPressed: fullyBooked ? null : onReserve,
-                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         child: Text(
                           fullyBooked ? 'Fully Booked' : ctaLabel,
-                          style: const TextStyle(fontSize: 13),
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),

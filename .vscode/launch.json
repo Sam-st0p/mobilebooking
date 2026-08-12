@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "mobilebooking",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file", "config.json"]
+    }
+  ]
+}
+
+// flutter run -d chrome --dart-define-from-file=config.json 
+// use this for terminal to run the app with the config.json file.

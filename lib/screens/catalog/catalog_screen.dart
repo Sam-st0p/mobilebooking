@@ -99,7 +99,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         crossAxisCount: 2,
                         mainAxisSpacing: 16,
                         crossAxisSpacing: 16,
-                        childAspectRatio: 0.62,
+                        mainAxisExtent: 400,
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
