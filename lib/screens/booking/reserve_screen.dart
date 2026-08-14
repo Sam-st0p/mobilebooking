@@ -5,16 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/product.dart';
 import '../../services/booking_service.dart';
 import '../../services/product_service.dart';
 import '../../theme/app_theme.dart';
 
 /// Port of the `app/catalog/[id]/reserve` multi-step flow (dates →
-/// requirements → agreement → payment → confirmation), collapsed into one
-/// screen with an internal step index rather than five separate routes —
-/// simpler to keep in sync as one wizard, and avoids losing state on the
-/// mobile back gesture between steps.
+/// requirements → agreement → review), collapsed into one screen with an
+/// internal step index rather than separate routes — simpler to keep in
+/// sync as one wizard, and avoids losing state on the mobile back gesture
+/// between steps. Payment itself happens on PayMongo's hosted checkout
+/// page, opened right after submit — see PaymentPendingScreen.
 class ReserveScreen extends StatefulWidget {
   final String idOrSlug;
   const ReserveScreen({super.key, required this.idOrSlug});
@@ -62,7 +64,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
   }
 }
 
-enum _Step { dates, requirements, agreement, payment, review }
+enum _Step { dates, requirements, agreement, review }
 
 const _idTypes = [
   "Driver's License",
@@ -81,7 +83,6 @@ class _ReservationWizard extends StatefulWidget {
 }
 
 class _ReservationWizardState extends State<_ReservationWizard> {
-  final _pageController = PageController();
   _Step _step = _Step.dates;
 
   // --- Step 1: dates & quantity --------------------------------------
@@ -104,22 +105,15 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   // --- Step 3: agreement ------------------------------------------------
   bool _agreementAccepted = false;
 
-  // --- Step 4: payment ---------------------------------------------------
-  final _paymentRefController = TextEditingController();
-  Uint8List? _paymentProofBytes;
-  String _paymentProofExt = 'jpg';
-
-  // --- Step 5: submit -----------------------------------------------------
+  // --- Step 4: review & submit ------------------------------------------
   bool _submitting = false;
   String? _submitError;
 
   @override
   void dispose() {
-    _pageController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
-    _paymentRefController.dispose();
     super.dispose();
   }
 
@@ -148,8 +142,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
             _idPhotoBytes != null;
       case _Step.agreement:
         return _agreementAccepted;
-      case _Step.payment:
-        return _paymentProofBytes != null;
       case _Step.review:
         return true;
     }
@@ -185,7 +177,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     }
   }
 
-  Future<void> _pickImage({required bool forIdPhoto}) async {
+  Future<void> _pickIdPhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (context) => SafeArea(
@@ -213,13 +205,8 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
 
     setState(() {
-      if (forIdPhoto) {
-        _idPhotoBytes = bytes;
-        _idPhotoExt = ext;
-      } else {
-        _paymentProofBytes = bytes;
-        _paymentProofExt = ext;
-      }
+      _idPhotoBytes = bytes;
+      _idPhotoExt = ext;
     });
   }
 
@@ -230,7 +217,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
       return;
     }
     setState(() => _step = _Step.values[_stepIndex + 1]);
-    _pageController.animateToPage(_stepIndex, duration: const Duration(milliseconds: 250), curve: Curves.ease);
   }
 
   void _goBack() {
@@ -239,7 +225,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
       return;
     }
     setState(() => _step = _Step.values[_stepIndex - 1]);
-    _pageController.animateToPage(_stepIndex, duration: const Duration(milliseconds: 250), curve: Curves.ease);
   }
 
   Future<void> _submit() async {
@@ -249,10 +234,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     });
     try {
       final idPhotoPath = await BookingService.uploadIdPhoto(_idPhotoBytes!, _idPhotoExt);
-      String? paymentProofPath;
-      if (_paymentProofBytes != null) {
-        paymentProofPath = await BookingService.uploadPaymentProof(_paymentProofBytes!, _paymentProofExt);
-      }
 
       final booking = await BookingService.createBooking(
         productId: widget.product.id,
@@ -264,14 +245,17 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         fullAddress: _addressController.text.trim(),
         idType: _idType!,
         idPhotoPath: idPhotoPath,
-        paymentReference: _paymentRefController.text.trim().isEmpty
-            ? null
-            : _paymentRefController.text.trim(),
-        paymentProofPath: paymentProofPath,
       );
 
+      final checkoutUrl = await BookingService.createPaymongoCheckoutSession(booking.id);
+
+      final launched = await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
+      if (!launched) {
+        throw StateError('Could not open the payment page. Please try again.');
+      }
+
       if (!mounted) return;
-      context.pushReplacement('/booking-confirmation', extra: booking);
+      context.pushReplacement('/booking-payment-pending', extra: booking);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -293,7 +277,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
               _Step.dates => _buildDatesStep(),
               _Step.requirements => _buildRequirementsStep(),
               _Step.agreement => _buildAgreementStep(),
-              _Step.payment => _buildPaymentStep(),
               _Step.review => _buildReviewStep(),
             },
           ),
@@ -320,7 +303,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
                           )
-                        : Text(_step == _Step.review ? 'Submit Booking' : 'Next'),
+                        : Text(_step == _Step.review ? 'Continue to Payment' : 'Next'),
                   ),
                 ),
               ],
@@ -377,7 +360,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         else if (_availabilityError != null)
           Text(_availabilityError!, style: const TextStyle(color: AppColors.statusRed))
         else if (_availableForRange != null)
-          Text('${_availableForRange} unit(s) available for these dates.',
+          Text('$_availableForRange unit(s) available for these dates.',
               style: const TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.w600)),
         if (_startDate != null && _endDate != null && (_availableForRange ?? 0) > 0) ...[
           const SizedBox(height: 20),
@@ -444,11 +427,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         const SizedBox(height: 16),
         _sectionTitle('Photo of your valid ID'),
         const SizedBox(height: 8),
-        _imagePickerTile(
-          bytes: _idPhotoBytes,
-          label: 'Upload ID photo',
-          onTap: () => _pickImage(forIdPhoto: true),
-        ),
+        _imagePickerTile(bytes: _idPhotoBytes, label: 'Upload ID photo', onTap: _pickIdPhoto),
       ],
     );
   }
@@ -493,55 +472,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     );
   }
 
-  Widget _buildPaymentStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('Payment'),
-        const SizedBox(height: 4),
-        const Text(
-          'Send the total below via GCash or bank transfer, then upload your '
-          'proof of payment. Your booking stays "Pending Review" until we '
-          'confirm the payment.',
-          style: TextStyle(color: AppColors.charcoal, fontSize: 13, height: 1.4),
-        ),
-        const SizedBox(height: 16),
-        _priceSummaryCard(),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.blush.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('GCash', style: TextStyle(fontWeight: FontWeight.w700)),
-              Text('0917-000-0000 · Maddy & Cassy Rentals', style: TextStyle(color: AppColors.charcoal)),
-              SizedBox(height: 10),
-              Text('Bank Transfer', style: TextStyle(fontWeight: FontWeight.w700)),
-              Text('BDO · 000-000-0000 · Maddy & Cassy Rentals', style: TextStyle(color: AppColors.charcoal)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _paymentRefController,
-          decoration: const InputDecoration(labelText: 'Payment reference number (optional)'),
-        ),
-        const SizedBox(height: 16),
-        _sectionTitle('Proof of payment'),
-        const SizedBox(height: 8),
-        _imagePickerTile(
-          bytes: _paymentProofBytes,
-          label: 'Upload payment screenshot',
-          onTap: () => _pickImage(forIdPhoto: false),
-        ),
-      ],
-    );
-  }
-
   Widget _buildReviewStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,6 +487,28 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         _reviewRow('ID type', _idType ?? '—'),
         const SizedBox(height: 16),
         _priceSummaryCard(),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.blush.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.lock_outline, size: 18, color: AppColors.charcoal),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "You'll be taken to PayMongo's secure checkout to pay via "
+                  'GCash, card, or QRPh. Your booking stays Pending Review '
+                  'until payment is confirmed.',
+                  style: TextStyle(color: AppColors.charcoal, fontSize: 12.5, height: 1.4),
+                ),
+              ),
+            ],
+          ),
+        ),
         if (_submitError != null) ...[
           const SizedBox(height: 16),
           Text(_submitError!, style: const TextStyle(color: AppColors.statusRed)),
@@ -670,7 +622,7 @@ class _StepHeader extends StatelessWidget {
   final int total;
   const _StepHeader({required this.current, required this.total});
 
-  static const _labels = ['Dates', 'Requirements', 'Agreement', 'Payment', 'Review'];
+  static const _labels = ['Dates', 'Requirements', 'Agreement', 'Review'];
 
   @override
   Widget build(BuildContext context) {

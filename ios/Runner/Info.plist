@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Used to photograph your valid ID and proof of payment when booking a rental.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to attach your valid ID and proof of payment from your photo library when booking a rental.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

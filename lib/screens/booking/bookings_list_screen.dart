@@ -149,7 +149,24 @@ class _BookingCard extends StatelessWidget {
                       style: const TextStyle(color: AppColors.charcoal, fontSize: 12.5),
                     ),
                     const SizedBox(height: 8),
-                    BookingStatusChip(status: booking.status),
+                    Row(
+                      children: [
+                        BookingStatusChip(status: booking.status),
+                        if (!booking.isPaid) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.statusRedBg,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text('Unpaid',
+                                style: TextStyle(
+                                    color: AppColors.statusRed, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),

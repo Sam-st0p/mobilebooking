@@ -59,11 +59,11 @@ class Booking {
   final double subtotal;
   final double totalAmount;
   final BookingStatus status;
+  final String paymentStatus;
   final String fullName;
   final String phoneNumber;
   final String fullAddress;
   final String idType;
-  final String? paymentReference;
   final String? adminNotes;
   final DateTime createdAt;
 
@@ -80,18 +80,23 @@ class Booking {
     required this.subtotal,
     required this.totalAmount,
     required this.status,
+    required this.paymentStatus,
     required this.fullName,
     required this.phoneNumber,
     required this.fullAddress,
     required this.idType,
-    this.paymentReference,
     this.adminNotes,
     required this.createdAt,
   });
 
   int get nights => endDate.difference(startDate).inDays + 1;
 
-  bool get isCancellable => status == BookingStatus.pendingReview;
+  bool get isPaid => paymentStatus == 'paid';
+
+  /// Cancellable only before payment — once paid, a cancellation should go
+  /// through a refund conversation with staff rather than a self-serve
+  /// delete, since money has actually moved.
+  bool get isCancellable => status == BookingStatus.pendingReview && !isPaid;
 
   /// Expects a row selected with:
   ///   *, products(name, product_images(storage_path, is_primary))
@@ -112,11 +117,11 @@ class Booking {
       subtotal: (row['subtotal'] as num).toDouble(),
       totalAmount: (row['total_amount'] as num).toDouble(),
       status: bookingStatusFromString(row['status'] as String? ?? 'pending_review'),
+      paymentStatus: row['payment_status'] as String? ?? 'unpaid',
       fullName: row['full_name'] as String? ?? '',
       phoneNumber: row['phone_number'] as String? ?? '',
       fullAddress: row['full_address'] as String? ?? '',
       idType: row['id_type'] as String? ?? '',
-      paymentReference: row['payment_reference'] as String?,
       adminNotes: row['admin_notes'] as String?,
       createdAt: DateTime.parse(row['created_at'] as String),
     );

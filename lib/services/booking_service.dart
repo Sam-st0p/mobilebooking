@@ -60,11 +60,10 @@ class BookingService {
   static Future<String> uploadIdPhoto(Uint8List bytes, String extension) =>
       _uploadDocument(subfolder: 'id-photos', bytes: bytes, extension: extension);
 
-  static Future<String> uploadPaymentProof(Uint8List bytes, String extension) =>
-      _uploadDocument(subfolder: 'payment-proofs', bytes: bytes, extension: extension);
-
-  /// Creates the booking. Pricing is recomputed server-side by the RPC from
-  /// the live product row, so nothing price-related is trusted from here.
+  /// Creates the booking (unpaid). Pricing is recomputed server-side by the
+  /// RPC from the live product row, so nothing price-related is trusted
+  /// from here. Call [createPaymongoCheckoutSession] right after to get a
+  /// checkout URL for the customer to pay.
   static Future<Booking> createBooking({
     required String productId,
     required DateTime start,
@@ -75,8 +74,6 @@ class BookingService {
     required String fullAddress,
     required String idType,
     required String idPhotoPath,
-    String? paymentReference,
-    String? paymentProofPath,
   }) async {
     final row = await supabase.rpc('create_booking', params: {
       'p_product_id': productId,
@@ -88,11 +85,35 @@ class BookingService {
       'p_full_address': fullAddress,
       'p_id_type': idType,
       'p_id_photo_path': idPhotoPath,
-      'p_payment_reference': paymentReference,
-      'p_payment_proof_path': paymentProofPath,
     });
     final data = row as Map<String, dynamic>;
     return Booking.fromRow(data);
+  }
+
+  /// Calls the create-paymongo-checkout-session Edge Function, which holds
+  /// the PayMongo secret key server-side and returns a hosted checkout
+  /// URL to open in the browser.
+  static Future<String> createPaymongoCheckoutSession(String bookingId) async {
+    final res = await supabase.functions.invoke(
+      'create-paymongo-checkout-session',
+      body: {'booking_id': bookingId},
+    );
+    final data = res.data;
+    if (data is! Map || data['checkout_url'] == null) {
+      throw StateError((data is Map ? data['error'] : null) ?? 'Could not start payment.');
+    }
+    return data['checkout_url'] as String;
+  }
+
+  /// Live updates for a single booking (used by the payment-pending screen
+  /// to notice payment_status flip to 'paid' the moment the PayMongo
+  /// webhook processes it — no polling needed).
+  static Stream<Booking?> watchBooking(String bookingId) {
+    return supabase
+        .from('bookings')
+        .stream(primaryKey: ['id'])
+        .eq('id', bookingId)
+        .map((rows) => rows.isEmpty ? null : Booking.fromRow(rows.first));
   }
 
   /// Used when the detail screen is opened without an `extra` Booking

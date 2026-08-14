@@ -51,9 +51,19 @@ create table if not exists public.bookings (
   agreement_accepted_at       timestamptz not null,
 
   -- Payment (proof-of-payment model: GCash / bank transfer screenshot)
-  payment_method               text not null default 'gcash_transfer',
-  payment_reference            text,
-  payment_proof_path           text,
+  -- Payment via PayMongo Checkout Sessions (see
+  -- supabase/functions/create-paymongo-checkout-session and
+  -- supabase/functions/paymongo-webhook). Booking rows are created
+  -- unpaid; the webhook flips payment_status to 'paid' once PayMongo
+  -- confirms the charge. payment_reference/payment_proof_path are kept
+  -- for a possible manual/offline fallback later but aren't populated
+  -- by the normal flow anymore.
+  payment_status                text not null default 'unpaid'
+                                check (payment_status in ('unpaid', 'paid', 'refunded', 'failed')),
+  paymongo_checkout_session_id  text,
+  payment_method                text,
+  payment_reference             text,
+  payment_proof_path            text,
 
   admin_notes                  text,
   created_at                   timestamptz not null default now(),
@@ -63,6 +73,24 @@ create table if not exists public.bookings (
 create index if not exists bookings_user_id_idx on public.bookings(user_id);
 create index if not exists bookings_product_id_idx on public.bookings(product_id);
 create index if not exists bookings_status_idx on public.bookings(status);
+
+-- Migration guard: if you already ran an earlier version of this file
+-- (proof-of-payment model), bring an existing table up to date rather
+-- than relying on CREATE TABLE IF NOT EXISTS, which only applies to
+-- brand-new tables.
+alter table public.bookings
+  add column if not exists payment_status text not null default 'unpaid';
+alter table public.bookings
+  drop constraint if exists bookings_payment_status_check;
+alter table public.bookings
+  add constraint bookings_payment_status_check
+  check (payment_status in ('unpaid', 'paid', 'refunded', 'failed'));
+alter table public.bookings
+  add column if not exists paymongo_checkout_session_id text;
+alter table public.bookings
+  alter column payment_method drop not null;
+alter table public.bookings
+  alter column payment_method drop default;
 
 -- Keep updated_at fresh.
 create or replace function public.set_updated_at()
@@ -109,6 +137,13 @@ create policy "customers cancel own pending bookings"
 --    Pricing is recomputed server-side from the live product row so a
 --    tampered client payload can't under-report the total.
 -- ---------------------------------------------------------------------------
+-- Old signature (proof-of-payment model) — drop before recreating with the
+-- new parameter list, since Postgres treats a differing param list as a
+-- distinct overload rather than a replacement.
+drop function if exists public.create_booking(
+  uuid, date, date, int, text, text, text, text, text, text, text
+);
+
 create or replace function public.create_booking(
   p_product_id            uuid,
   p_start_date             date,
@@ -118,9 +153,7 @@ create or replace function public.create_booking(
   p_phone_number           text,
   p_full_address           text,
   p_id_type                text,
-  p_id_photo_path          text,
-  p_payment_reference      text,
-  p_payment_proof_path     text
+  p_id_photo_path          text
 )
 returns public.bookings
 language plpgsql
@@ -176,12 +209,12 @@ begin
     user_id, product_id, start_date, end_date, quantity,
     daily_rate_snapshot, refundable_deposit_snapshot, subtotal, total_amount,
     full_name, phone_number, full_address, id_type, id_photo_path,
-    agreement_accepted_at, payment_reference, payment_proof_path
+    agreement_accepted_at, payment_status
   ) values (
     v_uid, p_product_id, p_start_date, p_end_date, p_quantity,
     v_daily_rate, v_deposit, v_subtotal, v_total,
     p_full_name, p_phone_number, p_full_address, p_id_type, p_id_photo_path,
-    now(), p_payment_reference, p_payment_proof_path
+    now(), 'unpaid'
   )
   returning * into v_booking;
 
@@ -190,12 +223,30 @@ end;
 $$;
 
 grant execute on function public.create_booking(
-  uuid, date, date, int, text, text, text, text, text, text, text
+  uuid, date, date, int, text, text, text, text, text
 ) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. Storage bucket for ID photos + payment proofs (private — not public,
---    unlike product-images).
+-- 5. Realtime — lets the app watch a booking row and see payment_status
+--    flip from 'unpaid' to 'paid' the moment the webhook processes it,
+--    instead of polling.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'bookings'
+  ) then
+    alter publication supabase_realtime add table public.bookings;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 6. Storage bucket for ID photos (private — not public, unlike
+--    product-images). Payment proof uploads are no longer part of the
+--    normal flow now that payment goes through PayMongo Checkout, but the
+--    bucket name is kept generic in case a manual/offline fallback is
+--    needed later.
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('booking-documents', 'booking-documents', false)

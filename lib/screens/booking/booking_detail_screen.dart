@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/booking.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_theme.dart';
@@ -19,6 +20,7 @@ class BookingDetailScreen extends StatefulWidget {
 class _BookingDetailScreenState extends State<BookingDetailScreen> {
   late Future<Booking?> _bookingFuture;
   bool _cancelling = false;
+  bool _payingNow = false;
   String? _error;
 
   @override
@@ -27,6 +29,25 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     _bookingFuture = widget.initialBooking != null
         ? Future.value(widget.initialBooking)
         : BookingService.getBookingById(widget.bookingId);
+  }
+
+  Future<void> _payNow(Booking booking) async {
+    setState(() {
+      _payingNow = true;
+      _error = null;
+    });
+    try {
+      final checkoutUrl = await BookingService.createPaymongoCheckoutSession(booking.id);
+      final launched = await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
+      if (!launched) throw StateError('Could not open the payment page.');
+      if (!mounted) return;
+      context.push('/booking-payment-pending', extra: booking);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = describeBookingError(e));
+    } finally {
+      if (mounted) setState(() => _payingNow = false);
+    }
   }
 
   Future<void> _cancel(Booking booking) async {
@@ -103,6 +124,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             _row('Daily rate', '${b.dailyRateSnapshot.toStringAsFixed(0)}'),
             _row('Refundable deposit', '${b.refundableDepositSnapshot.toStringAsFixed(0)}'),
             _row('Total', '${b.totalAmount.toStringAsFixed(0)}', emphasize: true),
+            _row('Payment', b.isPaid ? 'Paid' : 'Unpaid'),
           ]),
           const SizedBox(height: 16),
           _detailCard([
@@ -110,7 +132,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             _row('Phone', b.phoneNumber),
             _row('Address', b.fullAddress),
             _row('ID type', b.idType),
-            if (b.paymentReference != null) _row('Payment reference', b.paymentReference!),
           ]),
           if (b.adminNotes != null && b.adminNotes!.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -120,8 +141,20 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             const SizedBox(height: 16),
             Text(_error!, style: const TextStyle(color: AppColors.statusRed)),
           ],
-          if (b.isCancellable) ...[
+          if (!b.isPaid && b.status != BookingStatus.cancelled && b.status != BookingStatus.rejected) ...[
             const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _payingNow ? null : () => _payNow(b),
+                child: _payingNow
+                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white))
+                    : const Text('Pay Now'),
+              ),
+            ),
+          ],
+          if (b.isCancellable) ...[
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(

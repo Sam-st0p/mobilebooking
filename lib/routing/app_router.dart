@@ -2,12 +2,13 @@
 
 import 'package:go_router/go_router.dart';
 import '../models/booking.dart';
+import '../screens/account/profile_screen.dart';
 import '../screens/auth/sign_in_screen.dart';
 import '../screens/auth/sign_up_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
-import '../screens/booking/booking_confirmation_screen.dart';
 import '../screens/booking/booking_detail_screen.dart';
 import '../screens/booking/bookings_list_screen.dart';
+import '../screens/booking/payment_pending_screen.dart';
 import '../screens/booking/reserve_screen.dart';
 import '../screens/catalog/catalog_screen.dart';
 import '../screens/catalog/product_detail_screen.dart';
@@ -32,10 +33,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/account/profile',
-          builder: (context, state) => const ComingSoonScreen(
-            title: 'My Profile',
-            note: 'Profile form (app/account/profile) — phase 2.',
-          ),
+          builder: (context, state) => const ProfileScreen(),
         ),
         GoRoute(
           path: '/account/payments',
@@ -58,8 +56,8 @@ final appRouter = GoRouter(
       builder: (context, state) => ReserveScreen(idOrSlug: state.pathParameters['id']!),
     ),
     GoRoute(
-      path: '/booking-confirmation',
-      builder: (context, state) => BookingConfirmationScreen(booking: state.extra as Booking),
+      path: '/booking-payment-pending',
+      builder: (context, state) => PaymentPendingScreen(booking: state.extra as Booking),
     ),
     GoRoute(
       path: '/account/bookings/:id',

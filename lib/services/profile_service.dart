@@ -1,5 +1,7 @@
 // lib/services/profile_service.dart 
 
+import 'dart:typed_data';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import 'supabase_client.dart';
 
@@ -32,5 +34,26 @@ class ProfileService {
     if (updates.isEmpty) return;
 
     await supabase.from('profiles').update(updates).eq('id', uid);
+  }
+
+  /// ASSUMPTION: bucket name 'avatars' — not confirmed against the real
+  /// website schema (same caveat as booking-documents earlier). If the
+  /// website uses a different bucket for profile photos, this is the only
+  /// string that needs to change.
+  static const _avatarBucket = 'avatars';
+
+  static Future<void> uploadProfilePhoto(String uid, Uint8List bytes, String extension) async {
+    final path = '$uid/avatar.$extension';
+    await supabase.storage.from(_avatarBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+    await supabase.from('profiles').update({'photo_path': path}).eq('id', uid);
+  }
+
+  static String? photoUrl(String? photoPath) {
+    if (photoPath == null || photoPath.isEmpty) return null;
+    return supabase.storage.from(_avatarBucket).getPublicUrl(photoPath);
   }
 }
