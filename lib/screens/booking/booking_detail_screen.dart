@@ -6,6 +6,7 @@ import '../../models/booking.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/booking_status_chip.dart';
+import 'requirements_screen.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final String bookingId;
@@ -146,6 +147,19 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         if (b.adminNotes != null && b.adminNotes!.isNotEmpty) ...[
           const SizedBox(height: 16),
           _detailCard([_row('Note from Maddy & Cassy', b.adminNotes!)]),
+        ],
+        if (b.status != BookingStatus.cancelled && b.status != BookingStatus.rejected) ...[
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => RequirementsScreen(bookingId: b.id)),
+              ),
+              icon: const Icon(Icons.description_outlined),
+              label: const Text('Complete Requirements'),
+            ),
+          ),
         ],
         if (_error != null) ...[
           const SizedBox(height: 16),
