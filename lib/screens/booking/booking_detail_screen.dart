@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../models/booking.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_theme.dart';
@@ -20,34 +19,15 @@ class BookingDetailScreen extends StatefulWidget {
 class _BookingDetailScreenState extends State<BookingDetailScreen> {
   late Future<Booking?> _bookingFuture;
   bool _cancelling = false;
-  bool _payingNow = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _bookingFuture = widget.initialBooking != null
-        ? Future.value(widget.initialBooking)
-        : BookingService.getBookingById(widget.bookingId);
-  }
-
-  Future<void> _payNow(Booking booking) async {
-    setState(() {
-      _payingNow = true;
-      _error = null;
-    });
-    try {
-      final checkoutUrl = await BookingService.createPaymongoCheckoutSession(booking.id);
-      final launched = await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
-      if (!launched) throw StateError('Could not open the payment page.');
-      if (!mounted) return;
-      context.push('/booking-payment-pending', extra: booking);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = describeBookingError(e));
-    } finally {
-      if (mounted) setState(() => _payingNow = false);
-    }
+    // Always re-fetch rather than trusting `initialBooking` as-is: the list
+    // screen's row doesn't include booking_totals in the same shape safety
+    // margin, and this keeps one code path for "fully populated" bookings.
+    _bookingFuture = BookingService.getBookingById(widget.bookingId);
   }
 
   Future<void> _cancel(Booking booking) async {
@@ -102,71 +82,89 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   Widget _buildBody(Booking b) {
+    final fulfillment = b.fulfillment;
     return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(b.productName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-              ),
-              BookingStatusChip(status: b.status),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text('Booking #${b.id.substring(0, 8).toUpperCase()}',
-              style: const TextStyle(color: AppColors.charcoal, fontSize: 12)),
-          const SizedBox(height: 20),
-          _detailCard([
-            _row('Dates', '${_fmt(b.startDate)} – ${_fmt(b.endDate)} (${b.nights} night(s))'),
-            _row('Quantity', '${b.quantity} unit(s)'),
-            _row('Daily rate', '${b.dailyRateSnapshot.toStringAsFixed(0)}'),
-            _row('Refundable deposit', '${b.refundableDepositSnapshot.toStringAsFixed(0)}'),
-            _row('Total', '${b.totalAmount.toStringAsFixed(0)}', emphasize: true),
-            _row('Payment', b.isPaid ? 'Paid' : 'Unpaid'),
-          ]),
+      padding: const EdgeInsets.all(20),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(b.primaryProductName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BookingStatusChip(status: b.status),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(b.bookingReference.isNotEmpty ? 'Booking #${b.bookingReference}' : 'Booking #${b.id.substring(0, 8).toUpperCase()}',
+            style: const TextStyle(color: AppColors.charcoal, fontSize: 12)),
+        const SizedBox(height: 20),
+        _detailCard([
+          _row('Dates', '${_fmt(b.pickupAt)} – ${_fmt(b.returnAt)} (${b.nights} night(s))'),
+          _row('Quantity', '${b.totalQuantity} unit(s)'),
+          for (final item in b.items)
+            _row(item.productNameSnapshot,
+                '${item.quantity} × ${item.dailyRateSnapshot.toStringAsFixed(0)}/day'),
+          if (b.totals != null) ...[
+            _row('Rental subtotal', b.totals!.rentalSubtotal.toStringAsFixed(0)),
+            if (b.totals!.deliveryFee > 0) _row('Delivery fee', b.totals!.deliveryFee.toStringAsFixed(0)),
+            if (b.totals!.pickupConvenienceFee > 0)
+              _row('Convenience fee', b.totals!.pickupConvenienceFee.toStringAsFixed(0)),
+            if (b.totals!.specialDiscountTotal > 0)
+              _row('Discount', '-${b.totals!.specialDiscountTotal.toStringAsFixed(0)}'),
+            if (b.totals!.depositTotal > 0)
+              _row('Refundable deposit', b.totals!.depositTotal.toStringAsFixed(0)),
+            _row('Total', b.totalAmount.toStringAsFixed(0), emphasize: true),
+          ],
+        ]),
+        if (fulfillment != null) ...[
           const SizedBox(height: 16),
           _detailCard([
-            _row('Name', b.fullName),
-            _row('Phone', b.phoneNumber),
-            _row('Address', b.fullAddress),
-            _row('ID type', b.idType),
+            _row('Fulfillment', fulfillment.method == FulfillmentMethod.delivery ? 'Delivery' : 'Pickup'),
+            if (fulfillment.method == FulfillmentMethod.delivery) ...[
+              if (fulfillment.recipientName != null) _row('Recipient', fulfillment.recipientName!),
+              if (fulfillment.addressLine1 != null) _row('Address', fulfillment.addressLine1!),
+              if (fulfillment.cityMunicipality != null) _row('City', fulfillment.cityMunicipality!),
+              if (fulfillment.province != null) _row('Province', fulfillment.province!),
+              if (fulfillment.contactNumber != null) _row('Contact', fulfillment.contactNumber!),
+            ],
           ]),
-          if (b.adminNotes != null && b.adminNotes!.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _detailCard([_row('Note from Maddy & Cassy', b.adminNotes!)]),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 16),
-            Text(_error!, style: const TextStyle(color: AppColors.statusRed)),
-          ],
-          if (!b.isPaid && b.status != BookingStatus.cancelled && b.status != BookingStatus.rejected) ...[
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _payingNow ? null : () => _payNow(b),
-                child: _payingNow
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white))
-                    : const Text('Pay Now'),
-              ),
-            ),
-          ],
-          if (b.isCancellable) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _cancelling ? null : () => _cancel(b),
-                child: _cancelling
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Cancel Booking'),
-              ),
-            ),
-          ],
         ],
-      );
+        // NOTE: Identity/ID requirements (name, phone, address, ID type)
+        // used to be shown here directly from the booking row. They now
+        // live in booking_requirements + customer_documents (stage 3 —
+        // not yet built). This section intentionally omitted rather than
+        // showing stale/wrong data; re-add once that flow exists.
+        //
+        // NOTE: "Pay Now" button also removed — payment now goes through
+        // booking_payment_submissions + a rebuilt Edge Function (stage 5),
+        // not a simple isPaid check on the booking row.
+        if (b.customerNotes != null && b.customerNotes!.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _detailCard([_row('Your notes', b.customerNotes!)]),
+        ],
+        if (b.adminNotes != null && b.adminNotes!.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _detailCard([_row('Note from Maddy & Cassy', b.adminNotes!)]),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 16),
+          Text(_error!, style: const TextStyle(color: AppColors.statusRed)),
+        ],
+        if (b.isCancellable) ...[
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _cancelling ? null : () => _cancel(b),
+              child: _cancelling
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Cancel Booking'),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _detailCard(List<Widget> children) => Container(

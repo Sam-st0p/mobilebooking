@@ -14,12 +14,15 @@ class BookingStatusChip extends StatelessWidget {
     final Color bg;
     switch (status) {
       case BookingStatus.approved:
-      case BookingStatus.active:
-      case BookingStatus.completed:
+      case BookingStatus.confirmed:
+      case BookingStatus.readyForRelease:
+      case BookingStatus.released:
+      case BookingStatus.returned:
         fg = AppColors.statusGreen;
         bg = AppColors.statusGreenBg;
         break;
-      case BookingStatus.pendingReview:
+      case BookingStatus.draft:
+      case BookingStatus.pending:
         fg = AppColors.statusYellow;
         bg = AppColors.statusYellowBg;
         break;

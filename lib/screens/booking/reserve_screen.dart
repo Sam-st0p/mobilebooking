@@ -1,22 +1,14 @@
-// lib/screens/booking/reserve_screen.dart
 
-import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../models/booking.dart';
 import '../../models/product.dart';
 import '../../services/booking_service.dart';
 import '../../services/product_service.dart';
 import '../../theme/app_theme.dart';
 
-/// Port of the `app/catalog/[id]/reserve` multi-step flow (dates →
-/// requirements → agreement → review), collapsed into one screen with an
-/// internal step index rather than separate routes — simpler to keep in
-/// sync as one wizard, and avoids losing state on the mobile back gesture
-/// between steps. Payment itself happens on PayMongo's hosted checkout
-/// page, opened right after submit — see PaymentPendingScreen.
 class ReserveScreen extends StatefulWidget {
   final String idOrSlug;
   const ReserveScreen({super.key, required this.idOrSlug});
@@ -64,15 +56,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
   }
 }
 
-enum _Step { dates, requirements, agreement, review }
-
-const _idTypes = [
-  "Driver's License",
-  'Passport',
-  'Philippine National ID (PhilSys)',
-  'UMID',
-  'Other government ID',
-];
+enum _Step { dates, fulfillment, review }
 
 class _ReservationWizard extends StatefulWidget {
   final Product product;
@@ -94,18 +78,16 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   int? _availableForRange;
   String? _availabilityError;
 
-  // --- Step 2: requirements -------------------------------------------
+  // --- Step 2: fulfillment ---------------------------------------------
+  FulfillmentMethod _fulfillmentMethod = FulfillmentMethod.pickup;
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
-  String? _idType;
-  Uint8List? _idPhotoBytes;
-  String _idPhotoExt = 'jpg';
+  final _cityController = TextEditingController();
+  final _provinceController = TextEditingController();
+  final _notesController = TextEditingController();
 
-  // --- Step 3: agreement ------------------------------------------------
-  bool _agreementAccepted = false;
-
-  // --- Step 4: review & submit ------------------------------------------
+  // --- Step 3: review & submit ------------------------------------------
   bool _submitting = false;
   String? _submitError;
 
@@ -114,6 +96,9 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _cityController.dispose();
+    _provinceController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -124,6 +109,8 @@ class _ReservationWizardState extends State<_ReservationWizard> {
 
   double get _subtotal => widget.product.dailyRate * _nights * _quantity;
   double get _depositTotal => widget.product.refundableDeposit * _quantity;
+  // NOTE: delivery fee not yet part of the total shown here — see the
+  // "to be confirmed" note in the review step instead of guessing a number.
   double get _total => _subtotal + _depositTotal;
 
   bool get _canProceed {
@@ -134,14 +121,13 @@ class _ReservationWizardState extends State<_ReservationWizard> {
             !_checkingAvailability &&
             _availabilityError == null &&
             (_availableForRange ?? 0) >= _quantity;
-      case _Step.requirements:
-        return _nameController.text.trim().isNotEmpty &&
-            _phoneController.text.trim().isNotEmpty &&
+      case _Step.fulfillment:
+        final baseOk = _nameController.text.trim().isNotEmpty && _phoneController.text.trim().isNotEmpty;
+        if (_fulfillmentMethod == FulfillmentMethod.pickup) return baseOk;
+        return baseOk &&
             _addressController.text.trim().isNotEmpty &&
-            _idType != null &&
-            _idPhotoBytes != null;
-      case _Step.agreement:
-        return _agreementAccepted;
+            _cityController.text.trim().isNotEmpty &&
+            _provinceController.text.trim().isNotEmpty;
       case _Step.review:
         return true;
     }
@@ -177,39 +163,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     }
   }
 
-  Future<void> _pickIdPhoto() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take a photo'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null) return;
-
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85);
-    if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    final ext = picked.name.contains('.') ? picked.name.split('.').last : 'jpg';
-
-    setState(() {
-      _idPhotoBytes = bytes;
-      _idPhotoExt = ext;
-    });
-  }
-
   void _goNext() {
     if (!_canProceed) return;
     if (_step == _Step.review) {
@@ -227,35 +180,71 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     setState(() => _step = _Step.values[_stepIndex - 1]);
   }
 
+  /// Inferred from the website's ALREADY-CONFIRMED customerSnapshot mapping
+  /// (display_name/phone_number/full_address/contact_email — see project
+  /// notes on ProfileService). Not confirmed against the RPC body itself —
+  /// verify against src/services/bookingService.ts if available.
+  Map<String, dynamic> _buildCustomerSnapshot() => {
+        'display_name': _nameController.text.trim(),
+        'phone_number': _phoneController.text.trim(),
+        'full_address': _fulfillmentMethod == FulfillmentMethod.delivery
+            ? _addressController.text.trim()
+            : null,
+      };
+
+  /// Built from fields already available on the Product model used
+  /// elsewhere in this file. Not confirmed against the RPC body — verify
+  /// once website source is available.
+  Map<String, dynamic> _buildProductSnapshot() => {
+        'id': widget.product.id,
+        'name': widget.product.name,
+        'daily_rate': widget.product.dailyRate,
+        'refundable_deposit': widget.product.refundableDeposit,
+      };
+
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
       _submitError = null;
     });
     try {
-      final idPhotoPath = await BookingService.uploadIdPhoto(_idPhotoBytes!, _idPhotoExt);
+      final method = _fulfillmentMethod == FulfillmentMethod.delivery ? 'delivery' : 'pickup';
+      final location = _fulfillmentMethod == FulfillmentMethod.delivery
+          ? _addressController.text.trim()
+          : 'Store Pickup';
 
       final booking = await BookingService.createBooking(
         productId: widget.product.id,
-        start: _startDate!,
-        end: _endDate!,
+        rentalStartDate: _startDate!,
+        rentalEndDate: _endDate!,
+        fulfillmentMethod: method,
+        location: location,
+        customerNotes: _notesController.text.trim(),
+        // TODO: no known delivery fee schedule yet — defaulting to 0.
+        // Surface the real fee here once the business rule is known.
+        deliveryFee: 0,
+        discountAmount: 0,
+        productSnapshot: _buildProductSnapshot(),
+        customerSnapshot: _buildCustomerSnapshot(),
         quantity: _quantity,
-        fullName: _nameController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
-        fullAddress: _addressController.text.trim(),
-        idType: _idType!,
-        idPhotoPath: idPhotoPath,
+        cityMunicipality: _fulfillmentMethod == FulfillmentMethod.delivery
+            ? _cityController.text.trim()
+            : null,
+        province:
+            _fulfillmentMethod == FulfillmentMethod.delivery ? _provinceController.text.trim() : null,
       );
 
-      final checkoutUrl = await BookingService.createPaymongoCheckoutSession(booking.id);
-
-      final launched = await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
-      if (!launched) {
-        throw StateError('Could not open the payment page. Please try again.');
-      }
-
       if (!mounted) return;
-      context.pushReplacement('/booking-payment-pending', extra: booking);
+      // No payment redirect here — real workflow requires admin approval,
+      // then requirements + agreement completion, before payment. The
+      // booking detail screen is where those next steps will surface once
+      // stages 3-5 are built.
+      context.pushReplacement('/account/bookings/${booking.id}', extra: booking);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Booking submitted! We'll notify you once it's reviewed."),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -275,8 +264,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
             padding: const EdgeInsets.all(20),
             child: switch (_step) {
               _Step.dates => _buildDatesStep(),
-              _Step.requirements => _buildRequirementsStep(),
-              _Step.agreement => _buildAgreementStep(),
+              _Step.fulfillment => _buildFulfillmentStep(),
               _Step.review => _buildReviewStep(),
             },
           ),
@@ -303,7 +291,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
                           )
-                        : Text(_step == _Step.review ? 'Continue to Payment' : 'Next'),
+                        : Text(_step == _Step.review ? 'Submit Booking' : 'Next'),
                   ),
                 ),
               ],
@@ -389,15 +377,24 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     );
   }
 
-  Widget _buildRequirementsStep() {
+  Widget _buildFulfillmentStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('Rental requirements'),
-        const SizedBox(height: 4),
-        const Text('We need this to confirm and prepare your booking.',
-            style: TextStyle(color: AppColors.charcoal, fontSize: 13)),
-        const SizedBox(height: 16),
+        _sectionTitle('How will you get it?'),
+        const SizedBox(height: 12),
+        SegmentedButton<FulfillmentMethod>(
+          segments: const [
+            ButtonSegment(value: FulfillmentMethod.pickup, label: Text('Pickup'), icon: Icon(Icons.store_outlined)),
+            ButtonSegment(
+                value: FulfillmentMethod.delivery, label: Text('Delivery'), icon: Icon(Icons.local_shipping_outlined)),
+          ],
+          selected: {_fulfillmentMethod},
+          onSelectionChanged: (s) => setState(() => _fulfillmentMethod = s.first),
+        ),
+        const SizedBox(height: 20),
+        _sectionTitle('Contact details'),
+        const SizedBox(height: 12),
         TextField(
           controller: _nameController,
           decoration: const InputDecoration(labelText: 'Full name'),
@@ -410,63 +407,48 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           decoration: const InputDecoration(labelText: 'Phone number'),
           onChanged: (_) => setState(() {}),
         ),
-        const SizedBox(height: 12),
+        if (_fulfillmentMethod == FulfillmentMethod.delivery) ...[
+          const SizedBox(height: 20),
+          _sectionTitle('Delivery address'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _addressController,
+            maxLines: 2,
+            decoration: const InputDecoration(labelText: 'Street address'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cityController,
+            decoration: const InputDecoration(labelText: 'City / Municipality'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _provinceController,
+            decoration: const InputDecoration(labelText: 'Province'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'Delivery fee will be confirmed by the team after booking.',
+              style: TextStyle(color: AppColors.charcoal, fontSize: 12.5),
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        _sectionTitle('Notes (optional)'),
+        const SizedBox(height: 8),
         TextField(
-          controller: _addressController,
+          controller: _notesController,
           maxLines: 2,
-          decoration: const InputDecoration(labelText: 'Full address'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _idType,
-          decoration: const InputDecoration(labelText: 'Valid ID type'),
-          items: _idTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-          onChanged: (value) => setState(() => _idType = value),
-        ),
-        const SizedBox(height: 16),
-        _sectionTitle('Photo of your valid ID'),
-        const SizedBox(height: 8),
-        _imagePickerTile(bytes: _idPhotoBytes, label: 'Upload ID photo', onTap: _pickIdPhoto),
-      ],
-    );
-  }
-
-  Widget _buildAgreementStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('Rental agreement'),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Text(
-            'By booking, you agree to: return the item(s) in the condition '
-            'received, on or before the end date selected; that the '
-            'refundable deposit may be withheld to cover loss, damage, or '
-            'late return; and that Rental by Maddy & Cassy may verify the '
-            'ID provided. See full Terms & Conditions for complete policies '
-            'on cancellations, extensions, and liability.',
-            style: TextStyle(color: AppColors.charcoal, height: 1.5),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextButton(
-          onPressed: () => context.push('/terms'),
-          child: const Text('Read full Terms & Conditions'),
-        ),
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          value: _agreementAccepted,
-          onChanged: (v) => setState(() => _agreementAccepted = v ?? false),
-          title: const Text('I have read and agree to the Rental Agreement and Terms & Conditions.'),
+          decoration: const InputDecoration(hintText: 'Anything we should know?'),
         ),
       ],
     );
@@ -481,10 +463,14 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         _reviewRow('Item', widget.product.name),
         _reviewRow('Dates', '${_fmt(_startDate)} – ${_fmt(_endDate)} ($_nights night(s))'),
         _reviewRow('Quantity', '$_quantity'),
-        _reviewRow('Name on booking', _nameController.text.trim()),
+        _reviewRow('Fulfillment', _fulfillmentMethod == FulfillmentMethod.delivery ? 'Delivery' : 'Pickup'),
+        _reviewRow('Name', _nameController.text.trim()),
         _reviewRow('Phone', _phoneController.text.trim()),
-        _reviewRow('Address', _addressController.text.trim()),
-        _reviewRow('ID type', _idType ?? '—'),
+        if (_fulfillmentMethod == FulfillmentMethod.delivery) ...[
+          _reviewRow('Address', _addressController.text.trim()),
+          _reviewRow('City', _cityController.text.trim()),
+          _reviewRow('Province', _provinceController.text.trim()),
+        ],
         const SizedBox(height: 16),
         _priceSummaryCard(),
         const SizedBox(height: 16),
@@ -496,13 +482,13 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           ),
           child: const Row(
             children: [
-              Icon(Icons.lock_outline, size: 18, color: AppColors.charcoal),
+              Icon(Icons.info_outline, size: 18, color: AppColors.charcoal),
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  "You'll be taken to PayMongo's secure checkout to pay via "
-                  'GCash, card, or QRPh. Your booking stays Pending Review '
-                  'until payment is confirmed.',
+                  "After you submit, Maddy & Cassy will review your booking. "
+                  "Once approved, we'll ask you to complete ID verification "
+                  'and sign the rental agreement before payment.',
                   style: TextStyle(color: AppColors.charcoal, fontSize: 12.5, height: 1.4),
                 ),
               ),
@@ -547,7 +533,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
               '$currency${_subtotal.toStringAsFixed(0)}'),
           _priceRow('Refundable deposit × $_quantity', '$currency${_depositTotal.toStringAsFixed(0)}'),
           const Divider(height: 20),
-          _priceRow('Total due now', '$currency${_total.toStringAsFixed(0)}', emphasize: true),
+          _priceRow('Estimated total', '$currency${_total.toStringAsFixed(0)}', emphasize: true),
         ],
       ),
     );
@@ -573,47 +559,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         ),
       );
 
-  Widget _imagePickerTile({required Uint8List? bytes, required String label, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        height: 140,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(14),
-          image: bytes != null ? DecorationImage(image: MemoryImage(bytes), fit: BoxFit.cover) : null,
-        ),
-        child: bytes == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.add_a_photo_outlined, color: AppColors.charcoal),
-                  const SizedBox(height: 8),
-                  Text(label, style: const TextStyle(color: AppColors.charcoal)),
-                ],
-              )
-            : Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: AppColors.white,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      iconSize: 16,
-                      icon: const Icon(Icons.edit, color: AppColors.primary),
-                      onPressed: onTap,
-                    ),
-                  ),
-                ),
-              ),
-      ),
-    );
-  }
-
   String _fmt(DateTime? d) => d == null ? '—' : '${d.month}/${d.day}/${d.year}';
 }
 
@@ -622,7 +567,7 @@ class _StepHeader extends StatelessWidget {
   final int total;
   const _StepHeader({required this.current, required this.total});
 
-  static const _labels = ['Dates', 'Requirements', 'Agreement', 'Review'];
+  static const _labels = ['Dates', 'Fulfillment', 'Review'];
 
   @override
   Widget build(BuildContext context) {

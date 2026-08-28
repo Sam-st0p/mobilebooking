@@ -125,10 +125,10 @@ class _BookingCard extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: booking.productImage.isEmpty
+                child: booking.primaryImageUrl.isEmpty
                     ? Container(width: 64, height: 64, color: AppColors.lightGray)
                     : CachedNetworkImage(
-                        imageUrl: booking.productImage,
+                        imageUrl: booking.primaryImageUrl,
                         width: 64,
                         height: 64,
                         fit: BoxFit.cover,
@@ -141,36 +141,23 @@ class _BookingCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(booking.productName,
+                    Text(booking.primaryProductName,
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                     const SizedBox(height: 4),
                     Text(
-                      '${_fmt(booking.startDate)} – ${_fmt(booking.endDate)} · ${booking.quantity} unit(s)',
+                      '${_fmt(booking.pickupAt)} – ${_fmt(booking.returnAt)} · ${booking.totalQuantity} unit(s)',
                       style: const TextStyle(color: AppColors.charcoal, fontSize: 12.5),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        BookingStatusChip(status: booking.status),
-                        if (!booking.isPaid) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.statusRedBg,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: const Text('Unpaid',
-                                style: TextStyle(
-                                    color: AppColors.statusRed, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ),
-                        ],
-                      ],
-                    ),
+                    // NOTE: payment status badge removed here — payment now
+                    // lives in booking_payment_submissions, not a field on
+                    // bookings. Re-add once stage 5 (payment rebuild) gives
+                    // us a way to fetch the latest submission per booking.
+                    BookingStatusChip(status: booking.status),
                   ],
                 ),
               ),
-              Text('${booking.totalAmount.toStringAsFixed(0)}',
+              Text(booking.totalAmount.toStringAsFixed(0),
                   style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary)),
             ],
           ),
