@@ -1,31 +1,55 @@
-name: mobilebooking
-description: "Rental by Maddy & Cassy — customer mobile app"
-publish_to: 'none' 
+name: rental_by_maddy_and_cassy
+description: Rental by Maddy & Cassy — customer mobile app (Flutter port of the Next.js web app).
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
-  supabase_flutter: ^2.5.6
+  # Talks to the Mobile Application Backend / API Gateway (Next.js) over
+  # REST — the app no longer talks to Supabase directly.
+  dio: ^5.4.3+1
+
+  # Securely stores the JWT (access + refresh token) issued by the backend.
+  flutter_secure_storage: ^9.2.2
+
+  # Routing (mirrors the app/ folder route structure).
   go_router: ^14.2.0
+
+  # Simple state management for the auth/profile context (mirrors AuthContext.tsx).
   provider: ^6.1.2
+
+  # Poppins, same as --font-poppins in globals.css.
   google_fonts: ^6.2.1
+
+  # Local favorites store (mirrors hooks/useFavorites.ts localStorage usage).
   shared_preferences: ^2.2.3
+
+  # Product images from Supabase Storage.
   cached_network_image: ^3.3.1
+
+  # Date range picking for the reservation flow (phase 2).
   table_calendar: ^3.1.2
+
   intl: ^0.19.0
+
+  # Reservation flow: HTTP calls to the Next.js API routes that must stay
+  # server-side (document upload, PayMongo checkout), picking ID/selfie
+  # photos, drawing an e-signature, and opening the PayMongo checkout page.
+  http: ^1.2.1
+  http_parser: ^4.0.2
   image_picker: ^1.1.2
-  url_launcher: ^6.3.1
+  signature: ^5.5.0
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true

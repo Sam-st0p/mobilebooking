@@ -154,7 +154,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildForm(UserProfile profile) {
     if (!_initialized) _loadFrom(profile);
-    final photoUrl = ProfileService.photoUrl(profile.photoPath);
+    final photoUrl = profile.photoUrl;
 
     return ListView(
       padding: const EdgeInsets.all(20),

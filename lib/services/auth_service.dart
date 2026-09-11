@@ -1,61 +1,90 @@
 // lib/services/auth_service.dart
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'supabase_client.dart';
+import 'package:dio/dio.dart';
+import 'api_client.dart';
 
-/// Port of `src/services/authService.ts`. Same Supabase Auth calls
-/// (email OTP for sign-up/verification, email+password for sign-in).
+/// Lightweight stand-in for the old supabase_flutter `User` — the app now
+/// only knows what the backend's verify-otp response tells it.
+class AuthUser {
+  final String id;
+  final String? email;
+  const AuthUser({required this.id, this.email});
+
+  factory AuthUser.fromJson(Map<String, dynamic> json) =>
+      AuthUser(id: json['id'] as String, email: json['email'] as String?);
+}
+
+/// Profile fields collected upfront on sign-up (matches the web app's
+/// expanded sign-up form) — passed through to Supabase as user metadata so
+/// the profile row is populated immediately on first verified code.
+class SignUpProfile {
+  final String displayName;
+  final String phoneNumber; // exactly 11 digits, PH format
+  final String birthDate; // YYYY-MM-DD
+
+  const SignUpProfile({
+    required this.displayName,
+    required this.phoneNumber,
+    required this.birthDate,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'displayName': displayName,
+        'phoneNumber': phoneNumber,
+        'birthDate': birthDate,
+      };
+}
+
+/// Calls the backend's /api/mobile/auth/* routes instead of talking to
+/// Supabase Auth directly. Customer accounts are email-OTP only — no
+/// password — matching the web app ("No password is needed for customer
+/// accounts").
 class AuthService {
-  /// Sends a 6-digit one-time code to the given email via Supabase's native
-  /// email OTP delivery. Used for both customer sign-in (existing accounts
-  /// only, shouldCreateUser: false) and sign-up (creates the account on
-  /// first verified code, shouldCreateUser: true).
-  static Future<void> sendEmailOtp(
-    String email, {
-    bool shouldCreateUser = false,
-  }) async {
-    await supabase.auth.signInWithOtp(
-      email: email,
-      shouldCreateUser: shouldCreateUser,
-    );
-  }
+  static Dio get _dio => ApiClient.instance.dio;
 
-  static Future<User> verifyEmailOtp(String email, String token) async {
-    final response = await supabase.auth.verifyOTP(
-      email: email,
-      token: token,
-      type: OtpType.email,
-    );
-    final user = response.user;
-    if (user == null) {
-      throw Exception('The verification code could not be confirmed.');
+  static Future<void> sendSignInOtp(String email) async {
+    try {
+      await _dio.post('/api/mobile/auth/request-otp', data: {
+        'email': email,
+        'mode': 'sign-in',
+      });
+    } catch (e) {
+      throw Exception(apiErrorMessage(e, fallback: "Couldn't send a code to that email."));
     }
-    return user;
   }
 
-  static Future<User> loginWithEmail(String email, String password) async {
-    final response = await supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    final user = response.user;
-    if (user == null) {
-      throw Exception('Could not sign in.');
+  static Future<void> sendSignUpOtp(String email, SignUpProfile profile) async {
+    try {
+      await _dio.post('/api/mobile/auth/request-otp', data: {
+        'email': email,
+        'mode': 'sign-up',
+        'profile': profile.toJson(),
+      });
+    } catch (e) {
+      throw Exception(apiErrorMessage(e, fallback: "Couldn't send a code to that email."));
     }
-    return user;
   }
 
-  static Future<void> requestPasswordReset(String email) async {
-    await supabase.auth.resetPasswordForEmail(email);
+  static Future<AuthUser> verifyEmailOtp(String email, String code) async {
+    try {
+      final response = await _dio.post('/api/mobile/auth/verify-otp', data: {
+        'email': email,
+        'code': code,
+      });
+      final data = response.data as Map<String, dynamic>;
+      await ApiClient.instance.saveSession(
+        accessToken: data['accessToken'] as String,
+        refreshToken: data['refreshToken'] as String,
+      );
+      return AuthUser.fromJson(data['user'] as Map<String, dynamic>);
+    } catch (e) {
+      throw Exception(apiErrorMessage(e, fallback: 'That code is invalid or has expired.'));
+    }
   }
 
   static Future<void> logout() async {
-    await supabase.auth.signOut();
+    await ApiClient.instance.clearSession();
   }
 
-  /// Stream of the current user, mirroring subscribeToAuthChanges().
-  static Stream<User?> get authStateChanges =>
-      supabase.auth.onAuthStateChange.map((event) => event.session?.user);
-
-  static User? get currentUser => supabase.auth.currentUser;
+  static Future<bool> hasSession() => ApiClient.instance.hasSession();
 }

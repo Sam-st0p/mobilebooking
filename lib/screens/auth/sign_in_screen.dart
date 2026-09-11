@@ -7,7 +7,7 @@ import '../../theme/app_theme.dart';
 
 /// Port of `app/(auth)/sign-in/SignInForm.tsx`. Existing-account-only
 /// email OTP sign-in (shouldCreateUser: false), same as the web app —
-/// there is no password field, matching authService.sendEmailOtp usage.
+/// there is no password field, matching authService.sendSignInOtp usage.
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
 
@@ -29,7 +29,7 @@ class _SignInScreenState extends State<SignInScreen> {
     });
     try {
       final email = _emailController.text.trim();
-      await AuthService.sendEmailOtp(email, shouldCreateUser: false);
+      await AuthService.sendSignInOtp(email);
       if (!mounted) return;
       context.push('/verify-email?email=${Uri.encodeComponent(email)}&flow=sign-in');
     } catch (_) {

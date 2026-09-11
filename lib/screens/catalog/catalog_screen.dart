@@ -1,5 +1,4 @@
 // lib/screens/catalog/catalog_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../models/product.dart';
@@ -99,7 +98,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         crossAxisCount: 2,
                         mainAxisSpacing: 16,
                         crossAxisSpacing: 16,
-                        mainAxisExtent: 400,
+                        childAspectRatio: 0.72,
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -152,7 +151,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _categories.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final item = _categories[index];
                 final active = _category == item;
@@ -160,13 +159,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   label: Text(item == 'All' ? 'All Products' : item),
                   selected: active,
                   onSelected: (_) => setState(() => _category = item),
-                  selectedColor: AppColors.primary,
+                  selectedColor: AppColors.textPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                   labelStyle: TextStyle(
                     color: active ? AppColors.white : AppColors.textPrimary,
                     fontWeight: FontWeight.w600,
+                    fontSize: 13,
                   ),
                   backgroundColor: AppColors.white,
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: active ? AppColors.textPrimary : AppColors.border),
                 );
               },
             ),
@@ -176,7 +177,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<_SortOption>(
-                  initialValue: _sort,
+                  value: _sort,
                   decoration: const InputDecoration(isDense: true),
                   items: const [
                     DropdownMenuItem(value: _SortOption.featured, child: Text('Featured')),

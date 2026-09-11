@@ -1,52 +1,70 @@
 // lib/services/auth_provider.dart
-
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import 'auth_service.dart';
 import 'profile_service.dart';
 
-/// Port of `src/contexts/AuthContext.tsx`, scoped to the customer app (no
-/// `isAdmin` branch — this app never shows the admin dashboard). Wrap the
-/// app in a `ChangeNotifierProvider(create: (_) => AppAuth()..init())`.
+/// App-wide auth/session state. There's no more Supabase auth-state stream
+/// to listen to — the backend issues a plain JWT, so this provider checks
+/// for a stored token on startup and refreshes explicitly after
+/// sign-in/sign-out, rather than reacting to a live stream.
 class AppAuth extends ChangeNotifier {
-  User? user;
+  AuthUser? user;
   UserProfile? profile;
   bool loading = true;
 
-  void init() {
-    AuthService.authStateChanges.listen(_onUserChanged);
-    _onUserChanged(AuthService.currentUser);
-  }
-
-  Future<void> _onUserChanged(User? nextUser) async {
-    user = nextUser;
+  Future<void> init() async {
     loading = true;
     notifyListeners();
 
-    try {
-      if (nextUser != null) {
-        profile = await ProfileService.getUserProfile(nextUser.id);
-      } else {
-        profile = null;
-      }
-    } catch (_) {
+    final hasSession = await AuthService.hasSession();
+    if (hasSession) {
+      await _loadProfile();
+    } else {
+      user = null;
       profile = null;
-    } finally {
-      loading = false;
-      notifyListeners();
+    }
+
+    loading = false;
+    notifyListeners();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final fetchedProfile = await ProfileService.getMyProfile();
+      if (fetchedProfile == null) {
+        // Token was present but rejected/expired and couldn't be refreshed.
+        user = null;
+        profile = null;
+        return;
+      }
+      profile = fetchedProfile;
+      user = AuthUser(id: fetchedProfile.id, email: fetchedProfile.email);
+    } catch (_) {
+      user = null;
+      profile = null;
     }
   }
 
+  /// Call after AuthService.verifyEmailOtp() succeeds.
+  Future<void> onSignedIn(AuthUser signedInUser) async {
+    user = signedInUser;
+    loading = true;
+    notifyListeners();
+    await _loadProfile();
+    loading = false;
+    notifyListeners();
+  }
+
   Future<void> refreshProfile() async {
-    final currentUser = user;
-    if (currentUser != null) {
-      profile = await ProfileService.getUserProfile(currentUser.id);
-      notifyListeners();
-    }
+    await _loadProfile();
+    notifyListeners();
   }
 
   Future<void> signOut() async {
     await AuthService.logout();
+    user = null;
+    profile = null;
+    notifyListeners();
   }
 }

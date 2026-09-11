@@ -1,5 +1,6 @@
 // lib/routing/app_router.dart
 
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../models/booking.dart';
 import '../screens/account/profile_screen.dart';
@@ -8,12 +9,12 @@ import '../screens/auth/sign_up_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/booking/booking_detail_screen.dart';
 import '../screens/booking/bookings_list_screen.dart';
-import '../screens/booking/payment_pending_screen.dart';
 import '../screens/booking/reserve_screen.dart';
 import '../screens/catalog/catalog_screen.dart';
 import '../screens/catalog/product_detail_screen.dart';
 import '../screens/coming_soon_screen.dart';
 import '../screens/home_screen.dart';
+import '../services/auth_service.dart';
 import '../widgets/app_shell.dart';
 
 /// Route table mirroring the `app/` folder in the Next.js project.
@@ -39,7 +40,8 @@ final appRouter = GoRouter(
           path: '/account/payments',
           builder: (context, state) => const ComingSoonScreen(
             title: 'Payment History',
-            note: 'Payment history (app/account/payments) — phase 2.',
+            note: 'Backend endpoint already exists (GET /api/mobile/account/payments) — '
+                'just needs a screen built against it.',
           ),
         ),
       ],
@@ -52,19 +54,15 @@ final appRouter = GoRouter(
       builder: (context, state) => ProductDetailScreen(idOrSlug: state.pathParameters['id']!),
     ),
     GoRoute(
-      path: '/catalog/:id/reserve',
-      builder: (context, state) => ReserveScreen(idOrSlug: state.pathParameters['id']!),
-    ),
-    GoRoute(
-      path: '/booking-payment-pending',
-      builder: (context, state) => PaymentPendingScreen(booking: state.extra as Booking),
-    ),
-    GoRoute(
       path: '/account/bookings/:id',
       builder: (context, state) => BookingDetailScreen(
         bookingId: state.pathParameters['id']!,
-        initialBooking: state.extra as Booking?,
+        initialBooking: state.extra is Booking ? state.extra as Booking : null,
       ),
+    ),
+    GoRoute(
+      path: '/catalog/:id/reserve',
+      builder: (context, state) => ReserveScreen(idOrSlug: state.pathParameters['id']!),
     ),
     GoRoute(path: '/sign-in', builder: (context, state) => const SignInScreen()),
     GoRoute(path: '/sign-up', builder: (context, state) => const SignUpScreen()),
@@ -73,6 +71,7 @@ final appRouter = GoRouter(
       builder: (context, state) => VerifyEmailScreen(
         email: state.uri.queryParameters['email'] ?? '',
         flow: state.uri.queryParameters['flow'] ?? 'sign-in',
+        signUpProfile: state.extra is SignUpProfile ? state.extra as SignUpProfile : null,
       ),
     ),
     GoRoute(

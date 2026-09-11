@@ -1,8 +1,7 @@
 // lib/models/product.dart
-
-/// Port of `types/product.ts`. Field names match 1:1 so the mapping logic
-/// ported from `src/services/productService.ts` (see ProductService) reads
-/// the same way as the TypeScript original.
+/// Product model. Shape matches the JSON returned by
+/// GET /api/mobile/catalog and /api/mobile/catalog/:id — the backend does
+/// all the Supabase joins/RPCs and hands this back ready to use.
 enum ProductStatus { draft, active, inactive, archived }
 
 ProductStatus productStatusFromString(String value) {
@@ -26,6 +25,14 @@ class ProductReview {
     required this.comment,
     required this.date,
   });
+
+  factory ProductReview.fromJson(Map<String, dynamic> json) => ProductReview(
+        id: json['id'] as String,
+        author: json['author'] as String? ?? 'Verified renter',
+        rating: (json['rating'] as num).toDouble(),
+        comment: json['comment'] as String? ?? '',
+        date: json['date'] as String,
+      );
 }
 
 class ProductImage {
@@ -44,6 +51,15 @@ class ProductImage {
     required this.sortOrder,
     required this.isPrimary,
   });
+
+  factory ProductImage.fromJson(Map<String, dynamic> json) => ProductImage(
+        id: json['id'] as String,
+        storagePath: json['storagePath'] as String? ?? '',
+        url: json['url'] as String,
+        altText: json['altText'] as String?,
+        sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+        isPrimary: json['isPrimary'] as bool? ?? false,
+      );
 }
 
 class Product {
@@ -63,9 +79,6 @@ class Product {
   final List<ProductImage> images;
   final int totalUnits;
   final int availableUnits;
-  final int reservedUnits;
-  final int rentedUnits;
-  final int maintenanceUnits;
   final double rating;
   final int reviewCount;
   final List<ProductReview> reviews;
@@ -89,9 +102,6 @@ class Product {
     required this.images,
     required this.totalUnits,
     required this.availableUnits,
-    required this.reservedUnits,
-    required this.rentedUnits,
-    required this.maintenanceUnits,
     required this.rating,
     required this.reviewCount,
     required this.reviews,
@@ -99,13 +109,42 @@ class Product {
     required this.updatedAt,
   });
 
-  /// Alias for dailyRate — kept for parity with the TS `pricePerDay` alias.
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id'] as String,
+      slug: json['slug'] as String,
+      name: json['name'] as String,
+      brand: json['brand'] as String?,
+      category: json['category'] as String? ?? '',
+      shortDescription: json['shortDescription'] as String?,
+      description: json['description'] as String?,
+      dailyRate: (json['dailyRate'] as num).toDouble(),
+      refundableDeposit: (json['refundableDeposit'] as num?)?.toDouble() ?? 0,
+      currency: json['currency'] as String? ?? 'PHP',
+      status: productStatusFromString(json['status'] as String? ?? 'draft'),
+      isFeatured: json['isFeatured'] as bool? ?? false,
+      specifications: Map<String, String>.from(
+        (json['specifications'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? {},
+      ),
+      images: ((json['images'] as List?) ?? [])
+          .map((i) => ProductImage.fromJson(i as Map<String, dynamic>))
+          .toList(),
+      totalUnits: (json['totalUnits'] as num?)?.toInt() ?? 0,
+      availableUnits: (json['availableUnits'] as num?)?.toInt() ?? 0,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      reviews: ((json['reviews'] as List?) ?? [])
+          .map((r) => ProductReview.fromJson(r as Map<String, dynamic>))
+          .toList(),
+      createdAt: json['createdAt'] as String? ?? '',
+      updatedAt: json['updatedAt'] as String? ?? '',
+    );
+  }
+
   double get pricePerDay => dailyRate;
 
-  /// Alias for images[0]?.url.
   String get image => images.isNotEmpty ? images.first.url : '';
 
-  /// Parsed from specifications['included'] (comma-separated), if present.
   List<String> get included {
     final raw = specifications['included'];
     if (raw == null || raw.trim().isEmpty) return const [];

@@ -1,5 +1,4 @@
 // lib/screens/coming_soon_screen.dart
-
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
@@ -36,3 +35,4 @@ class ComingSoonScreen extends StatelessWidget {
     );
   }
 }
+  

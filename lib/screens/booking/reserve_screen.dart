@@ -1,4 +1,4 @@
-
+// lib/screens/booking/reserve_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -79,9 +79,12 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   String? _availabilityError;
 
   // --- Step 2: fulfillment ---------------------------------------------
+  // NOTE: name/phone are intentionally NOT collected here. The backend
+  // (app/api/mobile/bookings/route.ts) builds customerSnapshot from the
+  // user's profile row server-side and ignores anything the client sends
+  // for identity — collecting them in this form would be misleading UI
+  // that has no effect. See the note shown in _buildFulfillmentStep.
   FulfillmentMethod _fulfillmentMethod = FulfillmentMethod.pickup;
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
   final _provinceController = TextEditingController();
@@ -93,8 +96,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
     _addressController.dispose();
     _cityController.dispose();
     _provinceController.dispose();
@@ -122,10 +123,8 @@ class _ReservationWizardState extends State<_ReservationWizard> {
             _availabilityError == null &&
             (_availableForRange ?? 0) >= _quantity;
       case _Step.fulfillment:
-        final baseOk = _nameController.text.trim().isNotEmpty && _phoneController.text.trim().isNotEmpty;
-        if (_fulfillmentMethod == FulfillmentMethod.pickup) return baseOk;
-        return baseOk &&
-            _addressController.text.trim().isNotEmpty &&
+        if (_fulfillmentMethod == FulfillmentMethod.pickup) return true;
+        return _addressController.text.trim().isNotEmpty &&
             _cityController.text.trim().isNotEmpty &&
             _provinceController.text.trim().isNotEmpty;
       case _Step.review:
@@ -180,28 +179,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     setState(() => _step = _Step.values[_stepIndex - 1]);
   }
 
-  /// Inferred from the website's ALREADY-CONFIRMED customerSnapshot mapping
-  /// (display_name/phone_number/full_address/contact_email — see project
-  /// notes on ProfileService). Not confirmed against the RPC body itself —
-  /// verify against src/services/bookingService.ts if available.
-  Map<String, dynamic> _buildCustomerSnapshot() => {
-        'display_name': _nameController.text.trim(),
-        'phone_number': _phoneController.text.trim(),
-        'full_address': _fulfillmentMethod == FulfillmentMethod.delivery
-            ? _addressController.text.trim()
-            : null,
-      };
-
-  /// Built from fields already available on the Product model used
-  /// elsewhere in this file. Not confirmed against the RPC body — verify
-  /// once website source is available.
-  Map<String, dynamic> _buildProductSnapshot() => {
-        'id': widget.product.id,
-        'name': widget.product.name,
-        'daily_rate': widget.product.dailyRate,
-        'refundable_deposit': widget.product.refundableDeposit,
-      };
-
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
@@ -213,6 +190,10 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           ? _addressController.text.trim()
           : 'Store Pickup';
 
+      // The server builds pricing (including delivery fee/discounts) and
+      // the product/customer snapshots itself from authoritative data — it
+      // never trusts client-sent values for those. We only send what the
+      // customer actually chose here. See booking_service.dart.
       final booking = await BookingService.createBooking(
         productId: widget.product.id,
         rentalStartDate: _startDate!,
@@ -220,12 +201,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         fulfillmentMethod: method,
         location: location,
         customerNotes: _notesController.text.trim(),
-        // TODO: no known delivery fee schedule yet — defaulting to 0.
-        // Surface the real fee here once the business rule is known.
-        deliveryFee: 0,
-        discountAmount: 0,
-        productSnapshot: _buildProductSnapshot(),
-        customerSnapshot: _buildCustomerSnapshot(),
         quantity: _quantity,
         cityMunicipality: _fulfillmentMethod == FulfillmentMethod.delivery
             ? _cityController.text.trim()
@@ -392,20 +367,19 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           selected: {_fulfillmentMethod},
           onSelectionChanged: (s) => setState(() => _fulfillmentMethod = s.first),
         ),
-        const SizedBox(height: 20),
-        _sectionTitle('Contact details'),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Full name'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'Phone number'),
-          onChanged: (_) => setState(() {}),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Text(
+            "We'll use the name, phone number, and contact details from your "
+            'account profile for this booking. Update them in Account Settings '
+            "if they've changed.",
+            style: TextStyle(color: AppColors.charcoal, fontSize: 12.5),
+          ),
         ),
         if (_fulfillmentMethod == FulfillmentMethod.delivery) ...[
           const SizedBox(height: 20),
@@ -464,8 +438,6 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         _reviewRow('Dates', '${_fmt(_startDate)} – ${_fmt(_endDate)} ($_nights night(s))'),
         _reviewRow('Quantity', '$_quantity'),
         _reviewRow('Fulfillment', _fulfillmentMethod == FulfillmentMethod.delivery ? 'Delivery' : 'Pickup'),
-        _reviewRow('Name', _nameController.text.trim()),
-        _reviewRow('Phone', _phoneController.text.trim()),
         if (_fulfillmentMethod == FulfillmentMethod.delivery) ...[
           _reviewRow('Address', _addressController.text.trim()),
           _reviewRow('City', _cityController.text.trim()),

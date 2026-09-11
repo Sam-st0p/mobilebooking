@@ -54,7 +54,7 @@ class HomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 64, 20, 20),
                 // SingleChildScrollView (instead of a plain Column) keeps this
                 // from overflowing on shorter screens or larger text-scale
-                // settings — it'll scroll internally rather th0an clip/overflow.
+                // settings — it'll scroll internally rather than clip/overflow.
                 child: SingleChildScrollView(
                   physics: const NeverScrollableScrollPhysics(),
                   reverse: true,

@@ -6,7 +6,7 @@ import '../../models/booking.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/booking_status_chip.dart';
-import 'requirements_screen.dart';
+import '../coming_soon_screen.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final String bookingId;
@@ -26,8 +26,9 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   void initState() {
     super.initState();
     // Always re-fetch rather than trusting `initialBooking` as-is: the list
-    // screen's row doesn't include booking_totals in the same shape safety
-    // margin, and this keeps one code path for "fully populated" bookings.
+    // screen's row doesn't include the same totals/fulfillment fields with
+    // the same safety margin, and this keeps one code path for "fully
+    // populated" bookings.
     _bookingFuture = BookingService.getBookingById(widget.bookingId);
   }
 
@@ -83,7 +84,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   Widget _buildBody(Booking b) {
-    final fulfillment = b.fulfillment;
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -106,31 +106,24 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           for (final item in b.items)
             _row(item.productNameSnapshot,
                 '${item.quantity} × ${item.dailyRateSnapshot.toStringAsFixed(0)}/day'),
-          if (b.totals != null) ...[
-            _row('Rental subtotal', b.totals!.rentalSubtotal.toStringAsFixed(0)),
-            if (b.totals!.deliveryFee > 0) _row('Delivery fee', b.totals!.deliveryFee.toStringAsFixed(0)),
-            if (b.totals!.pickupConvenienceFee > 0)
-              _row('Convenience fee', b.totals!.pickupConvenienceFee.toStringAsFixed(0)),
-            if (b.totals!.specialDiscountTotal > 0)
-              _row('Discount', '-${b.totals!.specialDiscountTotal.toStringAsFixed(0)}'),
-            if (b.totals!.depositTotal > 0)
-              _row('Refundable deposit', b.totals!.depositTotal.toStringAsFixed(0)),
-            _row('Total', b.totalAmount.toStringAsFixed(0), emphasize: true),
-          ],
+          _row('Rental subtotal', b.rentalSubtotal.toStringAsFixed(0)),
+          if (b.deliveryFee > 0) _row('Delivery fee', b.deliveryFee.toStringAsFixed(0)),
+          if ((b.pickupConvenienceFee ?? 0) > 0)
+            _row('Convenience fee', b.pickupConvenienceFee!.toStringAsFixed(0)),
+          if (b.specialDiscountAmount > 0)
+            _row('Discount', '-${b.specialDiscountAmount.toStringAsFixed(0)}'),
+          if (b.refundableDeposit > 0)
+            _row('Refundable deposit', b.refundableDeposit.toStringAsFixed(0)),
+          _row('Total', b.totalAmount.toStringAsFixed(0), emphasize: true),
         ]),
-        if (fulfillment != null) ...[
-          const SizedBox(height: 16),
-          _detailCard([
-            _row('Fulfillment', fulfillment.method == FulfillmentMethod.delivery ? 'Delivery' : 'Pickup'),
-            if (fulfillment.method == FulfillmentMethod.delivery) ...[
-              if (fulfillment.recipientName != null) _row('Recipient', fulfillment.recipientName!),
-              if (fulfillment.addressLine1 != null) _row('Address', fulfillment.addressLine1!),
-              if (fulfillment.cityMunicipality != null) _row('City', fulfillment.cityMunicipality!),
-              if (fulfillment.province != null) _row('Province', fulfillment.province!),
-              if (fulfillment.contactNumber != null) _row('Contact', fulfillment.contactNumber!),
-            ],
-          ]),
-        ],
+        const SizedBox(height: 16),
+        _detailCard([
+          _row('Fulfillment', b.fulfillmentMethod == FulfillmentMethod.delivery ? 'Delivery' : 'Pickup'),
+          if (b.fulfillmentMethod == FulfillmentMethod.delivery &&
+              b.location != null &&
+              b.location!.isNotEmpty)
+            _row('Location', b.location!),
+        ]),
         // NOTE: Identity/ID requirements (name, phone, address, ID type)
         // used to be shown here directly from the booking row. They now
         // live in booking_requirements + customer_documents (stage 3 —
@@ -154,7 +147,15 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             width: double.infinity,
             child: FilledButton.tonalIcon(
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => RequirementsScreen(bookingId: b.id)),
+                MaterialPageRoute(
+                  builder: (_) => const ComingSoonScreen(
+                    title: 'Complete Requirements',
+                    note: 'This step needs rebuilding against the real document flow '
+                        '(3 ID/selfie uploads + emergency contact, submitted together '
+                        'via submitBookingDocuments) — the previous version guessed at '
+                        'a different, incorrect schema. See chat notes.',
+                  ),
+                ),
               ),
               icon: const Icon(Icons.description_outlined),
               label: const Text('Complete Requirements'),

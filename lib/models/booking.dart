@@ -1,17 +1,11 @@
 // lib/models/booking.dart
 //
-// Rebuilt against the REAL Supabase schema (see database.types.ts), not the
-// invented one this was originally written against. Key differences from
-// the old model:
-//   - No more full_name/phone_number/full_address/id_type/payment_status
-//     columns on `bookings` — identity/ID docs now live in
-//     `booking_requirements` (+ `customer_documents`), and payment state
-//     lives in `booking_payment_submissions`. Both are separate rebuild
-//     stages; until then, isPaid/requirements info is not available here.
-//   - `bookings` is now a header row; line items live in `booking_items`,
-//     fulfillment (pickup/delivery) in `booking_fulfillments`, and computed
-//     money fields in the `booking_totals` VIEW (fetched separately below,
-//     since views aren't reliably embeddable via PostgREST FK inference).
+// Matches the REAL JSON contract returned by the backend's
+// GET /api/mobile/account/bookings and /account/bookings/:id — which is
+// just src/types/booking.ts's `Booking` interface, serialized as-is (see
+// src/services/bookingService.ts on the Next.js side). The backend does
+// all the Supabase joins/mapping; this only ever parses clean camelCase
+// JSON, never raw Supabase rows.
 
 /// Mirrors the real `booking_status` enum.
 enum BookingStatus {
@@ -74,6 +68,29 @@ String bookingStatusLabel(BookingStatus status) {
   }
 }
 
+String bookingStatusToApiValue(BookingStatus status) {
+  switch (status) {
+    case BookingStatus.draft:
+      return 'draft';
+    case BookingStatus.pending:
+      return 'pending';
+    case BookingStatus.approved:
+      return 'approved';
+    case BookingStatus.confirmed:
+      return 'confirmed';
+    case BookingStatus.readyForRelease:
+      return 'ready_for_release';
+    case BookingStatus.released:
+      return 'released';
+    case BookingStatus.returned:
+      return 'returned';
+    case BookingStatus.cancelled:
+      return 'cancelled';
+    case BookingStatus.rejected:
+      return 'rejected';
+  }
+}
+
 /// Mirrors the real `fulfillment_method` enum.
 enum FulfillmentMethod { pickup, delivery }
 
@@ -81,170 +98,123 @@ FulfillmentMethod fulfillmentMethodFromString(String value) {
   return value == 'delivery' ? FulfillmentMethod.delivery : FulfillmentMethod.pickup;
 }
 
+/// One line item of a booking — mirrors `BookingItemLine` in booking.ts.
 class BookingItem {
-  final String id;
+  final String bookingItemId;
   final String productId;
   final String productNameSnapshot;
-  final double dailyRateSnapshot;
-  final double depositPerUnitSnapshot;
-  final int quantity;
+  final String brand;
+  final String category;
   final String imageUrl;
+  final int quantity;
+  final double dailyRateSnapshot;
+  final double refundableDeposit;
+  final List<String> included;
+  final double lineRentalSubtotal;
+  final int assignedUnitCount;
 
   const BookingItem({
-    required this.id,
+    required this.bookingItemId,
     required this.productId,
     required this.productNameSnapshot,
-    required this.dailyRateSnapshot,
-    required this.depositPerUnitSnapshot,
-    required this.quantity,
+    this.brand = '',
+    this.category = '',
     this.imageUrl = '',
+    required this.quantity,
+    required this.dailyRateSnapshot,
+    this.refundableDeposit = 0,
+    this.included = const [],
+    this.lineRentalSubtotal = 0,
+    this.assignedUnitCount = 0,
   });
 
-  /// Expects a row selected with:
-  ///   booking_items(id, product_id, product_name_snapshot,
-  ///     daily_rate_snapshot, deposit_per_unit_snapshot, quantity,
-  ///     products(product_images(storage_path, is_primary)))
-  factory BookingItem.fromRow(Map<String, dynamic> row) {
-    String imageUrl = '';
-    final product = row['products'] as Map<String, dynamic>?;
-    final images = (product?['product_images'] as List?) ?? [];
-    if (images.isNotEmpty) {
-      final primary = images.firstWhere(
-        (i) => i['is_primary'] == true,
-        orElse: () => images.first,
-      ) as Map<String, dynamic>;
-      final storagePath = primary['storage_path'] as String?;
-      if (storagePath != null) {
-        // Resolved by the caller (BookingService), which has access to the
-        // supabase client's storage bucket helper. Left blank here and
-        // filled in by BookingService.getMyBookings/getBookingById.
-        imageUrl = storagePath;
-      }
-    }
+  factory BookingItem.fromJson(Map<String, dynamic> json) {
     return BookingItem(
-      id: row['id'] as String,
-      productId: row['product_id'] as String,
-      productNameSnapshot: row['product_name_snapshot'] as String? ?? 'Item',
-      dailyRateSnapshot: (row['daily_rate_snapshot'] as num).toDouble(),
-      depositPerUnitSnapshot: (row['deposit_per_unit_snapshot'] as num?)?.toDouble() ?? 0,
-      quantity: (row['quantity'] as num?)?.toInt() ?? 1,
-      imageUrl: imageUrl,
-    );
-  }
-
-  BookingItem withResolvedImageUrl(String url) => BookingItem(
-        id: id,
-        productId: productId,
-        productNameSnapshot: productNameSnapshot,
-        dailyRateSnapshot: dailyRateSnapshot,
-        depositPerUnitSnapshot: depositPerUnitSnapshot,
-        quantity: quantity,
-        imageUrl: url,
-      );
-}
-
-class BookingFulfillment {
-  final FulfillmentMethod method;
-  final String? addressLine1;
-  final String? addressLine2;
-  final String? barangay;
-  final String? cityMunicipality;
-  final String? province;
-  final String? postalCode;
-  final String? recipientName;
-  final String? contactNumber;
-  final String? deliveryNotes;
-  final double deliveryFeeSnapshot;
-  final double pickupConvenienceFeeSnapshot;
-  final DateTime? scheduledAt;
-  final DateTime? completedAt;
-
-  const BookingFulfillment({
-    required this.method,
-    this.addressLine1,
-    this.addressLine2,
-    this.barangay,
-    this.cityMunicipality,
-    this.province,
-    this.postalCode,
-    this.recipientName,
-    this.contactNumber,
-    this.deliveryNotes,
-    this.deliveryFeeSnapshot = 0,
-    this.pickupConvenienceFeeSnapshot = 0,
-    this.scheduledAt,
-    this.completedAt,
-  });
-
-  factory BookingFulfillment.fromRow(Map<String, dynamic> row) {
-    return BookingFulfillment(
-      method: fulfillmentMethodFromString(row['method'] as String? ?? 'pickup'),
-      addressLine1: row['address_line_1'] as String?,
-      addressLine2: row['address_line_2'] as String?,
-      barangay: row['barangay'] as String?,
-      cityMunicipality: row['city_municipality'] as String?,
-      province: row['province'] as String?,
-      postalCode: row['postal_code'] as String?,
-      recipientName: row['recipient_name'] as String?,
-      contactNumber: row['contact_number'] as String?,
-      deliveryNotes: row['delivery_notes'] as String?,
-      deliveryFeeSnapshot: (row['delivery_fee_snapshot'] as num?)?.toDouble() ?? 0,
-      pickupConvenienceFeeSnapshot:
-          (row['pickup_convenience_fee_snapshot'] as num?)?.toDouble() ?? 0,
-      scheduledAt: row['scheduled_at'] != null ? DateTime.parse(row['scheduled_at'] as String) : null,
-      completedAt: row['completed_at'] != null ? DateTime.parse(row['completed_at'] as String) : null,
+      bookingItemId: json['bookingItemId'] as String? ?? '',
+      productId: json['productId'] as String? ?? '',
+      productNameSnapshot: json['productName'] as String? ?? 'Item',
+      brand: json['brand'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      imageUrl: json['image'] as String? ?? '',
+      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+      dailyRateSnapshot: (json['dailyRate'] as num?)?.toDouble() ?? 0,
+      refundableDeposit: (json['refundableDeposit'] as num?)?.toDouble() ?? 0,
+      included: ((json['included'] as List?) ?? []).map((e) => e.toString()).toList(),
+      lineRentalSubtotal: (json['lineRentalSubtotal'] as num?)?.toDouble() ?? 0,
+      assignedUnitCount: (json['assignedUnitCount'] as num?)?.toInt() ?? 0,
     );
   }
 }
 
-/// Mirrors the `booking_totals` VIEW. Fetched separately from the booking
-/// header (see BookingService) since PostgREST can't reliably embed a view
-/// via FK inference the way it embeds real tables.
-class BookingTotals {
-  final int rentalDays;
-  final double rentalSubtotal;
-  final double depositTotal;
-  final double deliveryFee;
-  final double pickupConvenienceFee;
-  final double specialDiscountTotal;
-  final double totalAmount;
+/// Mirrors `BookingProductSnapshot`.
+class BookingProductSnapshot {
+  final String name;
+  final String brand;
+  final String category;
+  final String image;
+  final double pricePerDay;
+  final String currency;
+  final List<String> included;
+  final String? color;
 
-  const BookingTotals({
-    required this.rentalDays,
-    required this.rentalSubtotal,
-    required this.depositTotal,
-    required this.deliveryFee,
-    required this.pickupConvenienceFee,
-    required this.specialDiscountTotal,
-    required this.totalAmount,
+  const BookingProductSnapshot({
+    required this.name,
+    this.brand = '',
+    this.category = '',
+    this.image = '',
+    this.pricePerDay = 0,
+    this.currency = 'PHP',
+    this.included = const [],
+    this.color,
   });
 
-  factory BookingTotals.fromRow(Map<String, dynamic> row) {
-    return BookingTotals(
-      rentalDays: (row['rental_days'] as num?)?.toInt() ?? 0,
-      rentalSubtotal: (row['rental_subtotal'] as num?)?.toDouble() ?? 0,
-      depositTotal: (row['deposit_total'] as num?)?.toDouble() ?? 0,
-      deliveryFee: (row['delivery_fee'] as num?)?.toDouble() ?? 0,
-      pickupConvenienceFee: (row['pickup_convenience_fee'] as num?)?.toDouble() ?? 0,
-      specialDiscountTotal: (row['special_discount_total'] as num?)?.toDouble() ?? 0,
-      totalAmount: (row['total_amount'] as num?)?.toDouble() ?? 0,
+  factory BookingProductSnapshot.fromJson(Map<String, dynamic> json) {
+    return BookingProductSnapshot(
+      name: json['name'] as String? ?? 'Item',
+      brand: json['brand'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      image: json['image'] as String? ?? '',
+      pricePerDay: (json['pricePerDay'] as num?)?.toDouble() ?? 0,
+      currency: json['currency'] as String? ?? 'PHP',
+      included: ((json['included'] as List?) ?? []).map((e) => e.toString()).toList(),
+      color: json['color'] as String?,
     );
   }
 }
 
 class Booking {
   final String id;
-  final String bookingReference;
-  final BookingStatus status;
+  final String bookingReference; // bookingRef in the JSON
   final String customerId;
+  final bool isGuestCheckout;
+  final List<BookingItem> items;
+  final int quantity;
+  final BookingStatus status;
+  final FulfillmentMethod fulfillmentMethod;
+  final DateTime pickupAt; // startDate in the JSON
+  final DateTime returnAt; // endDate in the JSON
+  final DateTime? nextAvailableAt;
+  final int dayCount;
+  final double dailyRate;
+  final double refundableDeposit;
+  final double rentalSubtotal;
+  final double specialDiscountAmount;
+  final double birthdayDiscountAmount;
+  final String birthdayDiscountStatus;
+  final int loyaltyCompletedRentalsSnapshot;
+  final double loyaltyDiscountAmount;
+  final String loyaltyDiscountStatus;
+  final double deliveryFee;
+  final double? pickupConvenienceFee;
+  final double totalAmount;
+  final String balancePaymentPreference;
+  final bool payLaterAllowed;
+  final String? location;
   final String? customerNotes;
   final String? adminNotes;
-  final String currencyCode;
-
-  final DateTime pickupAt;
-  final DateTime returnAt;
-  final DateTime? nextAvailableAt;
-
+  final BookingProductSnapshot productSnapshot;
+  final String requirementsStatus; // "not_submitted" | "pending_review" | "approved" | "rejected"
+  final String agreementStatus;
   final DateTime? approvedAt;
   final DateTime? confirmedAt;
   final DateTime? rejectedAt;
@@ -252,38 +222,42 @@ class Booking {
   final DateTime? releasedAt;
   final DateTime? returnedAt;
   final DateTime? cancelledAt;
-
-  final double birthdayDiscountAmount;
-  final String birthdayDiscountStatus;
-  final double loyaltyDiscountAmount;
-  final String loyaltyDiscountStatus;
-  final int loyaltyCompletedRentalsSnapshot;
-
   final DateTime createdAt;
   final DateTime updatedAt;
-
-  final List<BookingItem> items;
-  final BookingFulfillment? fulfillment;
-  final BookingTotals? totals;
-
-  // NOTE: Payment status is intentionally NOT modeled here. It now lives in
-  // `booking_payment_submissions` (a booking can have several payment
-  // attempts across down_payment/balance stages). Once the payment rebuild
-  // (stage 5) lands, BookingService will expose a way to fetch the latest
-  // relevant submission per booking; surface that in the UI rather than a
-  // single boolean.
 
   const Booking({
     required this.id,
     required this.bookingReference,
-    required this.status,
     required this.customerId,
-    this.customerNotes,
-    this.adminNotes,
-    required this.currencyCode,
+    this.isGuestCheckout = false,
+    this.items = const [],
+    this.quantity = 1,
+    required this.status,
+    required this.fulfillmentMethod,
     required this.pickupAt,
     required this.returnAt,
     this.nextAvailableAt,
+    required this.dayCount,
+    required this.dailyRate,
+    this.refundableDeposit = 0,
+    this.rentalSubtotal = 0,
+    this.specialDiscountAmount = 0,
+    this.birthdayDiscountAmount = 0,
+    this.birthdayDiscountStatus = 'not_eligible',
+    this.loyaltyCompletedRentalsSnapshot = 0,
+    this.loyaltyDiscountAmount = 0,
+    this.loyaltyDiscountStatus = 'not_eligible',
+    this.deliveryFee = 0,
+    this.pickupConvenienceFee,
+    required this.totalAmount,
+    this.balancePaymentPreference = 'in_person',
+    this.payLaterAllowed = false,
+    this.location,
+    this.customerNotes,
+    this.adminNotes,
+    required this.productSnapshot,
+    this.requirementsStatus = 'not_submitted',
+    this.agreementStatus = 'not_created',
     this.approvedAt,
     this.confirmedAt,
     this.rejectedAt,
@@ -291,139 +265,81 @@ class Booking {
     this.releasedAt,
     this.returnedAt,
     this.cancelledAt,
-    this.birthdayDiscountAmount = 0,
-    this.birthdayDiscountStatus = 'none',
-    this.loyaltyDiscountAmount = 0,
-    this.loyaltyDiscountStatus = 'none',
-    this.loyaltyCompletedRentalsSnapshot = 0,
     required this.createdAt,
     required this.updatedAt,
-    this.items = const [],
-    this.fulfillment,
-    this.totals,
   });
 
-  /// Best-effort display name for list/detail screens when there are
-  /// multiple line items — most bookings will have exactly one.
-  String get primaryProductName =>
-      items.isEmpty ? 'Booking' : items.length == 1 ? items.first.productNameSnapshot : '${items.first.productNameSnapshot} +${items.length - 1} more';
-
-  String get primaryImageUrl => items.isEmpty ? '' : items.first.imageUrl;
-
-  int get totalQuantity => items.fold(0, (sum, i) => sum + i.quantity);
-
-  int get nights => totals?.rentalDays ?? returnAt.difference(pickupAt).inDays;
-
-  double get totalAmount => totals?.totalAmount ?? 0;
-
-  /// Matches `cancel_own_booking` RPC's allowed states (self-service
-  /// cancellation while pending or approved — not yet paid/fulfilled).
-  bool get isCancellable => status == BookingStatus.pending || status == BookingStatus.approved;
-
-  /// Expects a row selected with:
-  ///   *,
-  ///   booking_items(id, product_id, product_name_snapshot,
-  ///     daily_rate_snapshot, deposit_per_unit_snapshot, quantity,
-  ///     products(product_images(storage_path, is_primary))),
-  ///   booking_fulfillments(*)
-  /// (see BookingService._bookingSelect). `totals` is attached afterward by
-  /// the service, since it comes from a separate `booking_totals` query.
-  factory Booking.fromRow(Map<String, dynamic> row, {BookingTotals? totals}) {
-    final itemRows = (row['booking_items'] as List?) ?? [];
-    final fulfillmentRow = row['booking_fulfillments'];
+  factory Booking.fromJson(Map<String, dynamic> json) {
+    DateTime? parseOpt(String? key) => json[key] != null ? DateTime.parse(json[key] as String) : null;
 
     return Booking(
-      id: row['id'] as String,
-      bookingReference: row['booking_reference'] as String? ?? '',
-      status: bookingStatusFromString(row['status'] as String? ?? 'pending'),
-      customerId: row['customer_id'] as String,
-      customerNotes: row['customer_notes'] as String?,
-      adminNotes: row['admin_notes'] as String?,
-      currencyCode: row['currency_code'] as String? ?? 'PHP',
-      pickupAt: DateTime.parse(row['pickup_at'] as String),
-      returnAt: DateTime.parse(row['return_at'] as String),
-      nextAvailableAt:
-          row['next_available_at'] != null ? DateTime.parse(row['next_available_at'] as String) : null,
-      approvedAt: row['approved_at'] != null ? DateTime.parse(row['approved_at'] as String) : null,
-      confirmedAt: row['confirmed_at'] != null ? DateTime.parse(row['confirmed_at'] as String) : null,
-      rejectedAt: row['rejected_at'] != null ? DateTime.parse(row['rejected_at'] as String) : null,
-      readyForReleaseAt: row['ready_for_release_at'] != null
-          ? DateTime.parse(row['ready_for_release_at'] as String)
-          : null,
-      releasedAt: row['released_at'] != null ? DateTime.parse(row['released_at'] as String) : null,
-      returnedAt: row['returned_at'] != null ? DateTime.parse(row['returned_at'] as String) : null,
-      cancelledAt: row['cancelled_at'] != null ? DateTime.parse(row['cancelled_at'] as String) : null,
-      birthdayDiscountAmount: (row['birthday_discount_amount'] as num?)?.toDouble() ?? 0,
-      birthdayDiscountStatus: row['birthday_discount_status'] as String? ?? 'none',
-      loyaltyDiscountAmount: (row['loyalty_discount_amount'] as num?)?.toDouble() ?? 0,
-      loyaltyDiscountStatus: row['loyalty_discount_status'] as String? ?? 'none',
-      loyaltyCompletedRentalsSnapshot:
-          (row['loyalty_completed_rentals_snapshot'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.parse(row['created_at'] as String),
-      updatedAt: DateTime.parse(row['updated_at'] as String),
-      items: itemRows.map((r) => BookingItem.fromRow(r as Map<String, dynamic>)).toList(),
-      fulfillment: fulfillmentRow is Map<String, dynamic> ? BookingFulfillment.fromRow(fulfillmentRow) : null,
-      totals: totals,
+      id: json['id'] as String,
+      bookingReference: json['bookingRef'] as String? ?? '',
+      customerId: json['customerId'] as String? ?? '',
+      isGuestCheckout: json['isGuestCheckout'] as bool? ?? false,
+      items: ((json['items'] as List?) ?? []).map((r) => BookingItem.fromJson(r as Map<String, dynamic>)).toList(),
+      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+      status: bookingStatusFromString(json['status'] as String? ?? 'pending'),
+      fulfillmentMethod: fulfillmentMethodFromString(json['fulfillmentMethod'] as String? ?? 'pickup'),
+      pickupAt: DateTime.parse(json['startDate'] as String),
+      returnAt: DateTime.parse(json['endDate'] as String),
+      nextAvailableAt: parseOpt('nextAvailableAt'),
+      dayCount: (json['dayCount'] as num?)?.toInt() ?? 0,
+      dailyRate: (json['dailyRate'] as num?)?.toDouble() ?? 0,
+      refundableDeposit: (json['refundableDeposit'] as num?)?.toDouble() ?? 0,
+      rentalSubtotal: (json['rentalSubtotal'] as num?)?.toDouble() ?? 0,
+      specialDiscountAmount: (json['specialDiscountAmount'] as num?)?.toDouble() ?? 0,
+      birthdayDiscountAmount: (json['birthdayDiscountAmount'] as num?)?.toDouble() ?? 0,
+      birthdayDiscountStatus: json['birthdayDiscountStatus'] as String? ?? 'not_eligible',
+      loyaltyCompletedRentalsSnapshot: (json['loyaltyCompletedRentalsSnapshot'] as num?)?.toInt() ?? 0,
+      loyaltyDiscountAmount: (json['loyaltyDiscountAmount'] as num?)?.toDouble() ?? 0,
+      loyaltyDiscountStatus: json['loyaltyDiscountStatus'] as String? ?? 'not_eligible',
+      deliveryFee: (json['deliveryFee'] as num?)?.toDouble() ?? 0,
+      pickupConvenienceFee: (json['pickupConvenienceFee'] as num?)?.toDouble(),
+      totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
+      balancePaymentPreference: json['balancePaymentPreference'] as String? ?? 'in_person',
+      payLaterAllowed: json['payLaterAllowed'] as bool? ?? false,
+      location: json['location'] as String?,
+      customerNotes: json['customerNotes'] as String?,
+      adminNotes: json['adminNotes'] as String?,
+      productSnapshot: BookingProductSnapshot.fromJson(
+        (json['productSnapshot'] as Map<String, dynamic>?) ?? const {},
+      ),
+      requirementsStatus: json['requirementsStatus'] as String? ?? 'not_submitted',
+      agreementStatus: json['agreementStatus'] as String? ?? 'not_created',
+      approvedAt: parseOpt('approvedAt'),
+      confirmedAt: parseOpt('confirmedAt'),
+      rejectedAt: parseOpt('rejectedAt'),
+      readyForReleaseAt: parseOpt('readyForReleaseAt'),
+      releasedAt: parseOpt('releasedAt'),
+      returnedAt: parseOpt('returnedAt'),
+      cancelledAt: parseOpt('cancelledAt'),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
 
-  Booking withTotals(BookingTotals? t) => Booking(
-        id: id,
-        bookingReference: bookingReference,
-        status: status,
-        customerId: customerId,
-        customerNotes: customerNotes,
-        adminNotes: adminNotes,
-        currencyCode: currencyCode,
-        pickupAt: pickupAt,
-        returnAt: returnAt,
-        nextAvailableAt: nextAvailableAt,
-        approvedAt: approvedAt,
-        confirmedAt: confirmedAt,
-        rejectedAt: rejectedAt,
-        readyForReleaseAt: readyForReleaseAt,
-        releasedAt: releasedAt,
-        returnedAt: returnedAt,
-        cancelledAt: cancelledAt,
-        birthdayDiscountAmount: birthdayDiscountAmount,
-        birthdayDiscountStatus: birthdayDiscountStatus,
-        loyaltyDiscountAmount: loyaltyDiscountAmount,
-        loyaltyDiscountStatus: loyaltyDiscountStatus,
-        loyaltyCompletedRentalsSnapshot: loyaltyCompletedRentalsSnapshot,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        items: items,
-        fulfillment: fulfillment,
-        totals: t,
-      );
+  // ---- Convenience getters used by the UI screens ----
 
-  Booking withItems(List<BookingItem> newItems) => Booking(
-        id: id,
-        bookingReference: bookingReference,
-        status: status,
-        customerId: customerId,
-        customerNotes: customerNotes,
-        adminNotes: adminNotes,
-        currencyCode: currencyCode,
-        pickupAt: pickupAt,
-        returnAt: returnAt,
-        nextAvailableAt: nextAvailableAt,
-        approvedAt: approvedAt,
-        confirmedAt: confirmedAt,
-        rejectedAt: rejectedAt,
-        readyForReleaseAt: readyForReleaseAt,
-        releasedAt: releasedAt,
-        returnedAt: returnedAt,
-        cancelledAt: cancelledAt,
-        birthdayDiscountAmount: birthdayDiscountAmount,
-        birthdayDiscountStatus: birthdayDiscountStatus,
-        loyaltyDiscountAmount: loyaltyDiscountAmount,
-        loyaltyDiscountStatus: loyaltyDiscountStatus,
-        loyaltyCompletedRentalsSnapshot: loyaltyCompletedRentalsSnapshot,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        items: newItems,
-        fulfillment: fulfillment,
-        totals: totals,
-      );
+  String get primaryProductName =>
+      items.isEmpty ? productSnapshot.name : (items.length == 1 ? items.first.productNameSnapshot : '${items.first.productNameSnapshot} +${items.length - 1} more');
+
+  String get primaryImageUrl => items.isNotEmpty ? items.first.imageUrl : productSnapshot.image;
+
+  int get totalQuantity => items.isEmpty ? quantity : items.fold(0, (sum, i) => sum + i.quantity);
+
+  int get nights => dayCount;
+
+  /// NOTE: payment status isn't in this contract yet — it lives in
+  /// `booking_payment_submissions`, which the backend doesn't expose via
+  /// GET /account/bookings yet (see paymentService.ts / mobile payments
+  /// route for the closest equivalent, keyed by booking). Treat this as a
+  /// placeholder until a real "latest payment status per booking" field is
+  /// added to the backend response — do not rely on it for gating UI.
+  bool get isPaid => status == BookingStatus.confirmed ||
+      status == BookingStatus.readyForRelease ||
+      status == BookingStatus.released ||
+      status == BookingStatus.returned;
+
+  bool get isCancellable => status == BookingStatus.pending || status == BookingStatus.approved;
 }

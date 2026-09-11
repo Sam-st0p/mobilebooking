@@ -1,7 +1,8 @@
 // lib/screens/auth/verify_email_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../services/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -10,8 +11,14 @@ import '../../theme/app_theme.dart';
 class VerifyEmailScreen extends StatefulWidget {
   final String email;
   final String flow; // "sign-in" | "sign-up"
+  final SignUpProfile? signUpProfile; // required to resend a sign-up code
 
-  const VerifyEmailScreen({super.key, required this.email, required this.flow});
+  const VerifyEmailScreen({
+    super.key,
+    required this.email,
+    required this.flow,
+    this.signUpProfile,
+  });
 
   @override
   State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
@@ -34,7 +41,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       _submitting = true;
     });
     try {
-      await AuthService.verifyEmailOtp(widget.email, code);
+      final signedInUser = await AuthService.verifyEmailOtp(widget.email, code);
+      if (!mounted) return;
+      await context.read<AppAuth>().onSignedIn(signedInUser);
       if (!mounted) return;
       context.go('/account/bookings');
     } catch (e) {
@@ -49,18 +58,23 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   Future<void> _resend() async {
     setState(() => _resending = true);
     try {
-      await AuthService.sendEmailOtp(
-        widget.email,
-        shouldCreateUser: widget.flow == 'sign-up',
-      );
+      if (widget.flow == 'sign-up') {
+        final profile = widget.signUpProfile;
+        if (profile == null) {
+          throw Exception('Please go back and fill in the sign-up form again to resend.');
+        }
+        await AuthService.sendSignUpOtp(widget.email, profile);
+      } else {
+        await AuthService.sendSignInOtp(widget.email);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('A new code has been sent.')),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't resend the code. Please try again.")),
+        SnackBar(content: Text(e is Exception ? e.toString().replaceFirst('Exception: ', '') : "Couldn't resend the code. Please try again.")),
       );
     } finally {
       if (mounted) setState(() => _resending = false);

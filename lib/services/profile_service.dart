@@ -1,23 +1,27 @@
-// lib/services/profile_service.dart 
-
 import 'dart:typed_data';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 import '../models/user_profile.dart';
-import 'supabase_client.dart';
+import 'api_client.dart';
 
-/// Port of the customer-relevant parts of `src/services/userService.ts`.
-/// (Admin-only helpers like listing every profile are intentionally left
-/// out — this is the customer app.)
+/// Calls /api/mobile/account/profile* routes.
 class ProfileService {
-  static Future<UserProfile?> getUserProfile(String uid) async {
-    if (uid.isEmpty) return null;
-    final data =
-        await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-    if (data == null) return null;
-    return UserProfile.fromRow(data);
+  static Dio get _dio => ApiClient.instance.dio;
+
+  static Future<UserProfile?> getMyProfile() async {
+    try {
+      final response = await _dio.get('/api/mobile/account/profile');
+      final data = response.data as Map<String, dynamic>;
+      return UserProfile.fromJson(data['profile'] as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 404) return null;
+      throw Exception(apiErrorMessage(e, fallback: 'Could not load your profile.'));
+    }
   }
 
-  static Future<void> updateUserProfile(
+  /// `uid` isn't actually used (the backend identifies the caller from the
+  /// bearer token), but kept as a parameter for call-site compatibility.
+  static Future<UserProfile> updateUserProfile(
     String uid, {
     String? displayName,
     String? phoneNumber,
@@ -25,35 +29,48 @@ class ProfileService {
     String? facebookLink,
     String? instagramLink,
   }) async {
-    final updates = <String, dynamic>{};
-    if (displayName != null) updates['display_name'] = displayName;
-    if (phoneNumber != null) updates['phone_number'] = phoneNumber;
-    if (fullAddress != null) updates['full_address'] = fullAddress;
-    if (facebookLink != null) updates['facebook_url'] = facebookLink;
-    if (instagramLink != null) updates['instagram_url'] = instagramLink;
-    if (updates.isEmpty) return;
-
-    await supabase.from('profiles').update(updates).eq('id', uid);
+    try {
+      final response = await _dio.put('/api/mobile/account/profile', data: {
+        if (displayName != null) 'displayName': displayName,
+        if (phoneNumber != null) 'phoneNumber': phoneNumber,
+        if (fullAddress != null) 'fullAddress': fullAddress,
+        if (facebookLink != null) 'facebookLink': facebookLink,
+        if (instagramLink != null) 'instagramLink': instagramLink,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return UserProfile.fromJson(data['profile'] as Map<String, dynamic>);
+    } catch (e) {
+      throw Exception(apiErrorMessage(e, fallback: 'Could not update your profile.'));
+    }
   }
 
-  /// ASSUMPTION: bucket name 'avatars' — not confirmed against the real
-  /// website schema (same caveat as booking-documents earlier). If the
-  /// website uses a different bucket for profile photos, this is the only
-  /// string that needs to change.
-  static const _avatarBucket = 'avatars';
-
-  static Future<void> uploadProfilePhoto(String uid, Uint8List bytes, String extension) async {
-    final path = '$uid/avatar.$extension';
-    await supabase.storage.from(_avatarBucket).uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(upsert: true),
-        );
-    await supabase.from('profiles').update({'photo_path': path}).eq('id', uid);
+  /// `uid` isn't actually used (same as updateUserProfile) — kept for
+  /// call-site compatibility with the screen.
+  static Future<String> uploadProfilePhoto(String uid, Uint8List bytes, String extension) async {
+    try {
+      final mimeType = switch (extension.toLowerCase()) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        _ => 'image/jpeg',
+      };
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: 'photo.$extension', contentType: MediaType.parse(mimeType)),
+      });
+      final response = await _dio.post('/api/mobile/account/profile/photo', data: formData);
+      final data = response.data as Map<String, dynamic>;
+      return data['photoUrl'] as String;
+    } catch (e) {
+      throw Exception(apiErrorMessage(e, fallback: 'Could not upload your photo.'));
+    }
   }
 
-  static String? photoUrl(String? photoPath) {
-    if (photoPath == null || photoPath.isEmpty) return null;
-    return supabase.storage.from(_avatarBucket).getPublicUrl(photoPath);
+  /// The backend now resolves photoPath to a full public URL itself (see
+  /// UserProfile.photoUrl) — this just returns that, kept as a static
+  /// helper for call-site compatibility with screens that still call
+  /// `ProfileService.photoUrl(profile.photoPath)` expecting a sync string.
+  /// Prefer `profile.photoUrl` directly in new code.
+  static String? photoUrl(String? photoPathOrUrl) {
+    if (photoPathOrUrl == null || photoPathOrUrl.isEmpty) return null;
+    return photoPathOrUrl;
   }
 }

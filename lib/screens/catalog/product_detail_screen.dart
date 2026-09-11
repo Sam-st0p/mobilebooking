@@ -1,5 +1,4 @@
 // lib/screens/catalog/product_detail_screen.dart
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -87,7 +86,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 height: 6,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: i == _imageIndex ? AppColors.white : AppColors.white.withValues(alpha: 0.5),
+                                  color: i == _imageIndex ? AppColors.white : AppColors.white.withOpacity(0.5),
                                 ),
                               );
                             }),
@@ -232,7 +231,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.blush.withValues(alpha: 0.35),
+        color: AppColors.blush.withOpacity(0.35),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(

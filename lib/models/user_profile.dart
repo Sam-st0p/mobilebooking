@@ -1,6 +1,5 @@
 // lib/models/user_profile.dart
-
-/// Port of the `UserProfile` interface in `src/types/database.ts`.
+/// Matches the JSON returned by GET/PUT /api/mobile/account/profile.
 class UserProfile {
   final String id;
   final String email;
@@ -8,11 +7,13 @@ class UserProfile {
   final String? lastName;
   final String displayName;
   final String? phoneNumber;
+  final String? birthDate;
   final String? fullAddress;
   final String? facebookLink;
   final String? instagramLink;
   final String accountStatus;
   final String? photoPath;
+  final String? photoUrl;
   final String createdAt;
   final String updatedAt;
 
@@ -23,30 +24,34 @@ class UserProfile {
     this.lastName,
     required this.displayName,
     this.phoneNumber,
+    this.birthDate,
     this.fullAddress,
     this.facebookLink,
     this.instagramLink,
     required this.accountStatus,
     this.photoPath,
+    this.photoUrl,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  factory UserProfile.fromRow(Map<String, dynamic> row) {
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
-      id: row['id'] as String,
-      email: (row['contact_email'] as String?) ?? '',
-      firstName: row['first_name'] as String?,
-      lastName: row['last_name'] as String?,
-      displayName: row['display_name'] as String? ?? '',
-      phoneNumber: row['phone_number'] as String?,
-      fullAddress: row['full_address'] as String?,
-      facebookLink: row['facebook_url'] as String?,
-      instagramLink: row['instagram_url'] as String?,
-      accountStatus: row['account_status'] as String? ?? 'active',
-      photoPath: row['photo_path'] as String?,
-      createdAt: row['created_at'] as String,
-      updatedAt: row['updated_at'] as String,
+      id: json['id'] as String,
+      email: json['email'] as String? ?? '',
+      firstName: json['firstName'] as String?,
+      lastName: json['lastName'] as String?,
+      displayName: json['displayName'] as String? ?? '',
+      phoneNumber: json['phoneNumber'] as String?,
+      birthDate: json['birthDate'] as String?,
+      fullAddress: json['fullAddress'] as String?,
+      facebookLink: json['facebookLink'] as String?,
+      instagramLink: json['instagramLink'] as String?,
+      accountStatus: json['accountStatus'] as String? ?? 'active',
+      photoPath: json['photoPath'] as String?,
+      photoUrl: json['photoUrl'] as String?,
+      createdAt: json['createdAt'] as String? ?? '',
+      updatedAt: json['updatedAt'] as String? ?? '',
     );
   }
 }
