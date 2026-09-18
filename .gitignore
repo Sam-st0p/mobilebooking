@@ -46,3 +46,4 @@ app.*.map.json
 
 # Local secrets (Supabase URL/anon key) — see README "Setup"
 config.json
+.env

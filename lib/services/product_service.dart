@@ -1,22 +1,19 @@
-// lib/services/producr_service.dart
+// lib/services/product_service.dart
 
 import 'package:dio/dio.dart';
 import '../models/product.dart';
 import 'api_client.dart';
 import 'mock_data.dart';
 
-/// Calls the backend's /api/mobile/catalog* routes. If API_BASE_URL isn't
-/// configured (no --dart-define-from-file passed), this transparently
-/// falls back to sample data instead — so the app is fully browsable with
-/// zero setup. Once you point it at a real backend, this fallback is never
-/// used.
+/// Calls the backend's /mobile/catalog* routes. If API_BASE_URL isn't
+/// configured, this transparently falls back to sample data.
 class ProductService {
   static Dio get _dio => ApiClient.instance.dio;
 
   static Future<List<Product>> getActiveProducts() async {
     if (!ApiConfig.isConfigured) return MockData.getActiveProducts();
     try {
-      final response = await _dio.get('/api/mobile/catalog');
+      final response = await _dio.get('/mobile/catalog');
       final data = response.data as Map<String, dynamic>;
       final rows = (data['products'] as List).cast<Map<String, dynamic>>();
       return rows.map(Product.fromJson).toList();
@@ -29,7 +26,7 @@ class ProductService {
   static Future<Product?> getProductById(String idOrSlug) async {
     if (!ApiConfig.isConfigured) return MockData.getProductById(idOrSlug);
     try {
-      final response = await _dio.get('/api/mobile/catalog/$idOrSlug');
+      final response = await _dio.get('/mobile/catalog/$idOrSlug');
       final data = response.data as Map<String, dynamic>;
       return Product.fromJson(data['product'] as Map<String, dynamic>);
     } on DioException catch (e) {

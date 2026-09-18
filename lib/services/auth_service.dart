@@ -1,10 +1,6 @@
-// lib/services/auth_service.dart
-
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'api_client.dart';
 
-/// Lightweight stand-in for the old supabase_flutter `User` — the app now
-/// only knows what the backend's verify-otp response tells it.
 class AuthUser {
   final String id;
   final String? email;
@@ -14,13 +10,10 @@ class AuthUser {
       AuthUser(id: json['id'] as String, email: json['email'] as String?);
 }
 
-/// Profile fields collected upfront on sign-up (matches the web app's
-/// expanded sign-up form) — passed through to Supabase as user metadata so
-/// the profile row is populated immediately on first verified code.
 class SignUpProfile {
   final String displayName;
-  final String phoneNumber; // exactly 11 digits, PH format
-  final String birthDate; // YYYY-MM-DD
+  final String phoneNumber;
+  final String birthDate;
 
   const SignUpProfile({
     required this.displayName,
@@ -35,39 +28,41 @@ class SignUpProfile {
       };
 }
 
-/// Calls the backend's /api/mobile/auth/* routes instead of talking to
-/// Supabase Auth directly. Customer accounts are email-OTP only — no
-/// password — matching the web app ("No password is needed for customer
-/// accounts").
 class AuthService {
   static Dio get _dio => ApiClient.instance.dio;
 
   static Future<void> sendSignInOtp(String email) async {
     try {
-      await _dio.post('/api/mobile/auth/request-otp', data: {
+      await _dio.post('/mobile/auth/request-otp', data: {
         'email': email,
         'mode': 'sign-in',
       });
     } catch (e) {
-      throw Exception(apiErrorMessage(e, fallback: "Couldn't send a code to that email."));
+      if (e is DioException) {
+        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
+      }
+      throw Exception(e.toString());
     }
   }
 
   static Future<void> sendSignUpOtp(String email, SignUpProfile profile) async {
     try {
-      await _dio.post('/api/mobile/auth/request-otp', data: {
+      await _dio.post('/mobile/auth/request-otp', data: {
         'email': email,
         'mode': 'sign-up',
         'profile': profile.toJson(),
       });
     } catch (e) {
-      throw Exception(apiErrorMessage(e, fallback: "Couldn't send a code to that email."));
+      if (e is DioException) {
+        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
+      }
+      throw Exception(e.toString());
     }
   }
 
   static Future<AuthUser> verifyEmailOtp(String email, String code) async {
     try {
-      final response = await _dio.post('/api/mobile/auth/verify-otp', data: {
+      final response = await _dio.post('/mobile/auth/verify-otp', data: {
         'email': email,
         'code': code,
       });
@@ -78,7 +73,10 @@ class AuthService {
       );
       return AuthUser.fromJson(data['user'] as Map<String, dynamic>);
     } catch (e) {
-      throw Exception(apiErrorMessage(e, fallback: 'That code is invalid or has expired.'));
+      if (e is DioException) {
+        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
+      }
+      throw Exception(e.toString());
     }
   }
 

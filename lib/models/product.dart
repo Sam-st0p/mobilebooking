@@ -1,8 +1,4 @@
-// lib/models/product.dart
-/// Product model. Shape matches the JSON returned by
-/// GET /api/mobile/catalog and /api/mobile/catalog/:id — the backend does
-/// all the Supabase joins/RPCs and hands this back ready to use.
-enum ProductStatus { draft, active, inactive, archived }
+﻿enum ProductStatus { draft, active, inactive, archived }
 
 ProductStatus productStatusFromString(String value) {
   return ProductStatus.values.firstWhere(
@@ -27,11 +23,11 @@ class ProductReview {
   });
 
   factory ProductReview.fromJson(Map<String, dynamic> json) => ProductReview(
-        id: json['id'] as String,
+        id: json['id']?.toString() ?? '',
         author: json['author'] as String? ?? 'Verified renter',
-        rating: (json['rating'] as num).toDouble(),
+        rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         comment: json['comment'] as String? ?? '',
-        date: json['date'] as String,
+        date: json['date'] as String? ?? '',
       );
 }
 
@@ -53,9 +49,9 @@ class ProductImage {
   });
 
   factory ProductImage.fromJson(Map<String, dynamic> json) => ProductImage(
-        id: json['id'] as String,
+        id: json['id']?.toString() ?? '',
         storagePath: json['storagePath'] as String? ?? '',
-        url: json['url'] as String,
+        url: json['url'] as String? ?? '',
         altText: json['altText'] as String?,
         sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
         isPrimary: json['isPrimary'] as bool? ?? false,
@@ -72,7 +68,7 @@ class Product {
   final String? description;
   final double dailyRate;
   final double refundableDeposit;
-  final String currency; // always "PHP"
+  final String currency;
   final ProductStatus status;
   final bool isFeatured;
   final Map<String, String> specifications;
@@ -110,28 +106,33 @@ class Product {
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
+    Map<String, String> parsedSpecs = {};
+    if (json['specifications'] is Map) {
+      (json['specifications'] as Map).forEach((k, v) {
+        parsedSpecs[k.toString()] = v.toString();
+      });
+    }
+
     return Product(
-      id: json['id'] as String,
-      slug: json['slug'] as String,
-      name: json['name'] as String,
+      id: json['id']?.toString() ?? '',
+      slug: json['slug']?.toString() ?? '',
+      name: json['name'] as String? ?? 'Unnamed Product',
       brand: json['brand'] as String?,
       category: json['category'] as String? ?? '',
       shortDescription: json['shortDescription'] as String?,
       description: json['description'] as String?,
-      dailyRate: (json['dailyRate'] as num).toDouble(),
-      refundableDeposit: (json['refundableDeposit'] as num?)?.toDouble() ?? 0,
+      dailyRate: (json['dailyRate'] as num?)?.toDouble() ?? 0.0,
+      refundableDeposit: (json['refundableDeposit'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'PHP',
       status: productStatusFromString(json['status'] as String? ?? 'draft'),
       isFeatured: json['isFeatured'] as bool? ?? false,
-      specifications: Map<String, String>.from(
-        (json['specifications'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? {},
-      ),
+      specifications: parsedSpecs,
       images: ((json['images'] as List?) ?? [])
           .map((i) => ProductImage.fromJson(i as Map<String, dynamic>))
           .toList(),
       totalUnits: (json['totalUnits'] as num?)?.toInt() ?? 0,
       availableUnits: (json['availableUnits'] as num?)?.toInt() ?? 0,
-      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       reviews: ((json['reviews'] as List?) ?? [])
           .map((r) => ProductReview.fromJson(r as Map<String, dynamic>))

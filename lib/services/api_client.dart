@@ -1,24 +1,16 @@
-// lib/services/api_client.dart
-
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Base URL of the Mobile Application Backend / API Gateway (your Next.js
-/// app's /api/mobile/* routes). Pass this in the same way as before:
-///   flutter run --dart-define-from-file=config.json
-/// with { "API_BASE_URL": "https://your-app.example.com" } in config.json.
 class ApiConfig {
   static const baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://YOUR-BACKEND-DOMAIN.example.com',
+    defaultValue: 'http://127.0.0.1:8000/api',
   );
 
-  static bool get isConfigured => !baseUrl.contains('YOUR-BACKEND-DOMAIN');
+  static bool get isConfigured => !baseUrl.contains('YOUR-BACKEND-DOMAIN') && baseUrl.isNotEmpty;
 }
 
-/// Thin wrapper around Dio that is the app's single door to the backend.
-/// Every other service (auth, catalog, account) goes through this — nothing
-/// in the app talks to Supabase directly anymore; the backend does that.
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
@@ -37,16 +29,19 @@ class ApiClient {
   )..interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await _storage.read(key: _accessTokenKey);
+          String? token = await _storage.read(key: _accessTokenKey);
+          if (token == null) {
+            try {
+              token = Supabase.instance.client.auth.currentSession?.accessToken;
+            } catch (_) {}
+          }
+
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           handler.next(options);
         },
         onError: (error, handler) async {
-          // Access token expired — try the refresh token once, then retry
-          // the original request. If that also fails, the caller (usually
-          // AppAuth) treats it as "signed out".
           if (error.response?.statusCode == 401 && error.requestOptions.extra['retried'] != true) {
             final refreshed = await _tryRefresh();
             if (refreshed) {
@@ -55,11 +50,9 @@ class ApiClient {
               final token = await _storage.read(key: _accessTokenKey);
               retryOptions.headers['Authorization'] = 'Bearer $token';
               try {
-                final response = await _dio.fetch(retryOptions);
-                return handler.resolve(response);
-              } catch (_) {
-                // fall through to original error
-              }
+                final retryResponse = await _dio.fetch(retryOptions);
+                return handler.resolve(retryResponse);
+              } catch (_) {}
             }
           }
           handler.next(error);
@@ -77,27 +70,43 @@ class ApiClient {
   Future<void> clearSession() async {
     await _storage.delete(key: _accessTokenKey);
     await _storage.delete(key: _refreshTokenKey);
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
   }
 
-  Future<bool> hasSession() async => (await _storage.read(key: _accessTokenKey)) != null;
+  Future<bool> hasSession() async {
+    final token = await _storage.read(key: _accessTokenKey);
+    if (token != null) return true;
+    try {
+      return Supabase.instance.client.auth.currentSession != null;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<bool> _tryRefresh() async {
     final refreshToken = await _storage.read(key: _refreshTokenKey);
-    if (refreshToken == null) return false;
-    try {
-      final response = await Dio(BaseOptions(baseUrl: ApiConfig.baseUrl)).post(
-        '/api/mobile/auth/refresh',
-        data: {'refreshToken': refreshToken},
-      );
-      final data = response.data as Map<String, dynamic>;
-      if (data['success'] == true) {
-        await saveSession(
-          accessToken: data['accessToken'] as String,
-          refreshToken: data['refreshToken'] as String,
+    if (refreshToken != null) {
+      try {
+        final response = await Dio(BaseOptions(baseUrl: ApiConfig.baseUrl)).post(
+          '/mobile/auth/refresh',
+          data: {'refreshToken': refreshToken},
         );
-        return true;
-      }
-      return false;
+        final data = response.data as Map<String, dynamic>;
+        if (data['accessToken'] != null && data['refreshToken'] != null) {
+          await saveSession(
+            accessToken: data['accessToken'] as String,
+            refreshToken: data['refreshToken'] as String,
+          );
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final result = await Supabase.instance.client.auth.refreshSession();
+      return result.session != null;
     } catch (_) {
       await clearSession();
       return false;
@@ -105,8 +114,6 @@ class ApiClient {
   }
 }
 
-/// Consistent error message extraction from the backend's
-/// `{ success: false, error: "..." }` shape.
 String apiErrorMessage(Object error, {String fallback = 'Something went wrong. Please try again.'}) {
   if (error is DioException) {
     final data = error.response?.data;
