@@ -1,4 +1,6 @@
-﻿import 'package:dio/dio.dart';
+﻿import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -22,14 +24,33 @@ class ApiClient {
   late final Dio _dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 20),
+      // The backend talks to a distant database (a single query can take ~2.5 s) and
+      // uploads run several of them, so 15 s was too tight and reported healthy uploads
+      // as failures.
+      receiveTimeout: const Duration(seconds: 90),
+      sendTimeout: const Duration(seconds: 90),
       contentType: 'application/json',
+      // Ask for JSON errors. Without this Laravel answers uncaught exceptions with an
+      // HTML page, which the app cannot read — so every crash looked like a generic
+      // failure. With it, the exception message comes back as JSON and shows in the app.
+      headers: const {'Accept': 'application/json'},
     ),
   )..interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           String? token = await _storage.read(key: _accessTokenKey);
+
+          // Refresh BEFORE sending when the access token is expired or about to
+          // expire. Supabase access tokens last ~1 hour, and multipart uploads
+          // (payment proof, documents) cannot be replayed after a 401, so
+          // waiting for the 401 made those requests fail with a session error.
+          if (token != null && !options.path.contains('/auth/') && _isExpiredOrExpiring(token)) {
+            if (await _refreshOnce()) {
+              token = await _storage.read(key: _accessTokenKey);
+            }
+          }
+
           if (token == null) {
             try {
               token = Supabase.instance.client.auth.currentSession?.accessToken;
@@ -43,10 +64,13 @@ class ApiClient {
         },
         onError: (error, handler) async {
           if (error.response?.statusCode == 401 && error.requestOptions.extra['retried'] != true) {
-            final refreshed = await _tryRefresh();
+            final refreshed = await _refreshOnce();
             if (refreshed) {
               final retryOptions = error.requestOptions;
               retryOptions.extra['retried'] = true;
+              // A FormData body can only be sent once; clone it for the replay.
+              final body = retryOptions.data;
+              if (body is FormData) retryOptions.data = body.clone();
               final token = await _storage.read(key: _accessTokenKey);
               retryOptions.headers['Authorization'] = 'Bearer $token';
               try {
@@ -85,6 +109,29 @@ class ApiClient {
     }
   }
 
+  Future<bool>? _refreshInFlight;
+
+  /// Only ever one refresh at a time: Supabase rotates refresh tokens, so two
+  /// parallel refreshes with the same token would make the second one fail.
+  Future<bool> _refreshOnce() {
+    return _refreshInFlight ??= _tryRefresh().whenComplete(() => _refreshInFlight = null);
+  }
+
+  /// True when the JWT's `exp` claim is in the past or within [leeway].
+  static bool _isExpiredOrExpiring(String jwt, {Duration leeway = const Duration(seconds: 60)}) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return false;
+      final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+      final exp = (jsonDecode(payload) as Map<String, dynamic>)['exp'];
+      if (exp is! num) return false;
+      final expiresAt = DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+      return DateTime.now().isAfter(expiresAt.subtract(leeway));
+    } catch (_) {
+      return false; // Can't tell — let the server decide.
+    }
+  }
+
   Future<bool> _tryRefresh() async {
     final refreshToken = await _storage.read(key: _refreshTokenKey);
     if (refreshToken != null) {
@@ -117,7 +164,15 @@ class ApiClient {
 String apiErrorMessage(Object error, {String fallback = 'Something went wrong. Please try again.'}) {
   if (error is DioException) {
     final data = error.response?.data;
-    if (data is Map && data['error'] is String) return data['error'] as String;
+    if (data is Map) {
+      final code = data['error'];
+      final message = data['message'];
+      // Some endpoints (payments) answer {error: "SOME_CODE", message: "Readable text"}.
+      // Prefer the readable text when `error` is just a machine code.
+      final looksLikeCode = code is String && RegExp(r'^[A-Z0-9_]+$').hasMatch(code);
+      if (message is String && message.isNotEmpty && (code is! String || looksLikeCode)) return message;
+      if (code is String) return code;
+    }
   }
   return fallback;
 }

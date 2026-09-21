@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'supabase' => [
+        'url' => env('SUPABASE_URL'),
+        // Anon/public key only — never put the service_role key here.
+        // Every call using this key also carries a specific user's own
+        // bearer token, so it can't be used to bypass RLS.
+        'anon_key' => env('SUPABASE_ANON_KEY'),
+        // Storage bucket for profile photos. Set SUPABASE_PROFILE_PHOTO_BUCKET in .env if yours is named differently.
+        'profile_photo_bucket' => env('SUPABASE_PROFILE_PHOTO_BUCKET', 'profile-photos'),
+    ],
+
 ];

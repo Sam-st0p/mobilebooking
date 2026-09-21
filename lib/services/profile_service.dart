@@ -10,7 +10,7 @@ class ProfileService {
 
   static Future<UserProfile?> getMyProfile() async {
     try {
-      final response = await _dio.get('/api/mobile/account/profile');
+      final response = await _dio.get('/mobile/account/profile');
       final data = response.data as Map<String, dynamic>;
       return UserProfile.fromJson(data['profile'] as Map<String, dynamic>);
     } on DioException catch (e) {
@@ -30,7 +30,7 @@ class ProfileService {
     String? instagramLink,
   }) async {
     try {
-      final response = await _dio.put('/api/mobile/account/profile', data: {
+      final response = await _dio.put('/mobile/account/profile', data: {
         if (displayName != null) 'displayName': displayName,
         if (phoneNumber != null) 'phoneNumber': phoneNumber,
         if (fullAddress != null) 'fullAddress': fullAddress,
@@ -56,7 +56,7 @@ class ProfileService {
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: 'photo.$extension', contentType: MediaType.parse(mimeType)),
       });
-      final response = await _dio.post('/api/mobile/account/profile/photo', data: formData);
+      final response = await _dio.post('/mobile/account/profile/photo', data: formData);
       final data = response.data as Map<String, dynamic>;
       return data['photoUrl'] as String;
     } catch (e) {

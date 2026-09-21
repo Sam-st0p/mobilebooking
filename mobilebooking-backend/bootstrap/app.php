@@ -12,7 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Resolve the signed-in Supabase user (from the bearer token) for the
+        // mobile API. See App\Http\Middleware\ResolveSupabaseUser.
+        $middleware->api(append: [
+            \App\Http\Middleware\ResolveSupabaseUser::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -6,7 +6,6 @@ import '../../models/booking.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/booking_status_chip.dart';
-import '../coming_soon_screen.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final String bookingId;
@@ -33,25 +32,57 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   Future<void> _cancel(Booking booking) async {
+    final reasonController = TextEditingController();
+    final detailsController = TextEditingController();
+
+    // TEMPORARY: free-text reason entry. The real app uses a fixed dropdown
+    // (CANCELLATION_REASON_OPTIONS in src/types/booking.ts) that the
+    // backend RPC validates against — that exact list wasn't available
+    // when this was written. Replace this with a real dropdown once it is;
+    // until then, a mismatched reason fails safely with a clear server
+    // error rather than silently succeeding with wrong data.
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cancel this booking?'),
-        content: const Text('This cannot be undone. You can always book again later.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('This sends a cancellation request for administrator review. '
+                'Reserved dates remain held until it is approved.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(labelText: 'Reason to cancel'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: detailsController,
+              decoration: const InputDecoration(labelText: 'Additional details (optional)'),
+              maxLines: 2,
+            ),
+          ],
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep booking')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Cancel booking')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Submit request')),
         ],
       ),
     );
     if (confirmed != true) return;
+    if (reasonController.text.trim().isEmpty) return;
 
     setState(() {
       _cancelling = true;
       _error = null;
     });
     try {
-      await BookingService.cancelBooking(booking.id);
+      await BookingService.cancelBooking(
+        booking.id,
+        reason: reasonController.text.trim(),
+        additionalDetails: detailsController.text.trim().isEmpty ? null : detailsController.text.trim(),
+      );
       if (!mounted) return;
       context.pop();
     } catch (e) {
@@ -66,7 +97,27 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Booking Details')),
+      appBar: AppBar(
+        title: const Text('Booking Details'),
+        // When this page is opened with context.go() (e.g. "Track Booking" after a
+        // reservation) there is nothing to pop, so Flutter shows no back arrow and
+        // the screen was a dead end. Offer a way back to My Bookings in that case;
+        // when it can be popped, the normal back arrow appears as usual.
+        leading: context.canPop()
+            ? null
+            : IconButton(
+                tooltip: 'My Bookings',
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go('/account/bookings'),
+              ),
+        actions: [
+          IconButton(
+            tooltip: 'Home',
+            icon: const Icon(Icons.home_outlined),
+            onPressed: () => context.go('/'),
+          ),
+        ],
+      ),
       body: FutureBuilder<Booking?>(
         future: _bookingFuture,
         builder: (context, snapshot) {
@@ -141,22 +192,22 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           const SizedBox(height: 16),
           _detailCard([_row('Note from Maddy & Cassy', b.adminNotes!)]),
         ],
-        if (b.status != BookingStatus.cancelled && b.status != BookingStatus.rejected) ...[
+        if (b.requirementsStatus == 'not_submitted' &&
+            b.status != BookingStatus.cancelled &&
+            b.status != BookingStatus.rejected) ...[
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: FilledButton.tonalIcon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const ComingSoonScreen(
-                    title: 'Complete Requirements',
-                    note: 'This step needs rebuilding against the real document flow '
-                        '(3 ID/selfie uploads + emergency contact, submitted together '
-                        'via submitBookingDocuments) — the previous version guessed at '
-                        'a different, incorrect schema. See chat notes.',
-                  ),
-                ),
-              ),
+              onPressed: () async {
+                // Steps 4-6 of the guided reservation (documents, agreement,
+                // confirmation). Refresh on return so the requirements
+                // status reflects whatever was submitted.
+                await context.push<bool>('/account/bookings/${b.id}/documents', extra: b);
+                if (mounted) {
+                  setState(() => _bookingFuture = BookingService.getBookingById(widget.bookingId));
+                }
+              },
               icon: const Icon(Icons.description_outlined),
               label: const Text('Complete Requirements'),
             ),
@@ -193,17 +244,24 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
 
   Widget _row(String label, String value, {bool emphasize = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(width: 130, child: Text(label, style: const TextStyle(color: AppColors.charcoal))),
-            Expanded(
-              child: Text(value,
-                  style: TextStyle(
-                      fontWeight: emphasize ? FontWeight.w700 : FontWeight.w600,
-                      color: emphasize ? AppColors.primary : AppColors.textPrimary)),
-            ),
-          ],
+        // The label column is normally 130 wide but shrinks on very narrow screens
+        // instead of overflowing.
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final labelWidth = constraints.maxWidth * 0.4 < 130 ? constraints.maxWidth * 0.4 : 130.0;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: labelWidth, child: Text(label, style: const TextStyle(color: AppColors.charcoal))),
+                Expanded(
+                  child: Text(value,
+                      style: TextStyle(
+                          fontWeight: emphasize ? FontWeight.w700 : FontWeight.w600,
+                          color: emphasize ? AppColors.primary : AppColors.textPrimary)),
+                ),
+              ],
+            );
+          },
         ),
       );
 

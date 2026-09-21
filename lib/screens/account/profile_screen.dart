@@ -2,6 +2,7 @@
 
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import '../../models/user_profile.dart';
 import '../../services/auth_provider.dart';
 import '../../services/profile_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/form_layout.dart';
 
 /// Port of `app/account/profile/page.tsx`.
 class ProfileScreen extends StatefulWidget {
@@ -39,6 +41,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _instagramController.text = profile.instagramLink ?? '';
     _initialized = true;
   }
+
+  bool get _nameValid => _nameController.text.trim().length >= 2;
+  bool get _phoneValid => RegExp(r'^\d{11}$').hasMatch(_phoneController.text.trim());
+  bool get _canSave => _nameValid && _phoneValid && !_saving;
 
   @override
   void dispose() {
@@ -71,7 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _successMessage = 'Profile updated.');
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Could not save your profile. Please try again.');
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -114,7 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await context.read<AppAuth>().refreshProfile();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Could not update your photo. Please try again.');
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
     }
@@ -196,35 +202,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        Text('Email', style: _labelStyle),
-        const SizedBox(height: 4),
-        Text(profile.email, style: const TextStyle(color: AppColors.charcoal)),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Full name'),
+        LabeledField(
+          label: 'Email',
+          required: false,
+          note: 'You sign in with this email, so it can\'t be changed here.',
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Expanded(child: Text(profile.email, style: const TextStyle(color: AppColors.charcoal))),
+                const Icon(Icons.lock_outline, size: 16, color: AppColors.charcoal),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _phoneController,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'Phone number'),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Full name',
+          child: TextField(
+            controller: _nameController,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _addressController,
-          maxLines: 2,
-          decoration: const InputDecoration(labelText: 'Full address'),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Phone number',
+          note: 'Use exactly 11 digits.',
+          noteColor: _phoneController.text.isNotEmpty && !_phoneValid ? AppColors.statusRed : AppColors.charcoal,
+          child: TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(11)],
+            decoration: const InputDecoration(hintText: '09XXXXXXXXX'),
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _facebookController,
-          decoration: const InputDecoration(labelText: 'Facebook link (optional)'),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Full address',
+          required: false,
+          child: TextField(
+            controller: _addressController,
+            maxLines: 2,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(hintText: 'House/unit number, street, subdivision, and barangay'),
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _instagramController,
-          decoration: const InputDecoration(labelText: 'Instagram link (optional)'),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Facebook link (optional)',
+          required: false,
+          child: TextField(
+            controller: _facebookController,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(hintText: 'https://facebook.com/yourprofile'),
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
+        ),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Instagram link (optional)',
+          required: false,
+          child: TextField(
+            controller: _instagramController,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(hintText: 'https://instagram.com/yourprofile'),
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
         ),
         const SizedBox(height: 20),
         if (_error != null) ...[
@@ -238,7 +296,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _saving ? null : () => _save(profile.id),
+            onPressed: _canSave ? () => _save(profile.id) : null,
             child: _saving
                 ? const SizedBox(
                     height: 18,

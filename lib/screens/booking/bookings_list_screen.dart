@@ -46,9 +46,11 @@ class _BookingsListScreenState extends State<BookingsListScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
+              final reason = describeBookingError(snapshot.error ?? '');
               return _ScrollableMessage(
                 icon: Icons.error_outline,
-                message: 'Could not load your bookings. Pull down to try again.',
+                // Show the reason too (e.g. "You need to be signed in…"), not just a generic line.
+                message: 'Could not load your bookings. Pull down to try again.\n\n$reason',
               );
             }
             final bookings = snapshot.data ?? [];

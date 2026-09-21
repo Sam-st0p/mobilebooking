@@ -64,7 +64,10 @@ class AuthService {
     try {
       final response = await _dio.post('/mobile/auth/verify-otp', data: {
         'email': email,
-        'code': code,
+        // Laravel's /auth/verify-otp validates a field named `token`
+        // (it forwards it to Supabase as-is). Sending `code` made every
+        // sign-in fail with a 422 "The token field is required."
+        'token': code,
       });
       final data = response.data as Map<String, dynamic>;
       await ApiClient.instance.saveSession(

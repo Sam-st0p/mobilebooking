@@ -8,6 +8,7 @@ import '../screens/auth/sign_in_screen.dart';
 import '../screens/auth/sign_up_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/booking/booking_detail_screen.dart';
+import '../screens/booking/booking_documents_screen.dart';
 import '../screens/booking/bookings_list_screen.dart';
 import '../screens/booking/reserve_screen.dart';
 import '../screens/catalog/catalog_screen.dart';
@@ -59,6 +60,20 @@ final appRouter = GoRouter(
         bookingId: state.pathParameters['id']!,
         initialBooking: state.extra is Booking ? state.extra as Booking : null,
       ),
+    ),
+    // Steps 4-6 of the guided reservation (Verification Documents, Rental
+    // Agreement, Booking Confirmation). `extra` may be a BookingDocumentsArgs
+    // (from the reserve wizard) or a plain Booking (from booking detail).
+    GoRoute(
+      path: '/account/bookings/:id/documents',
+      builder: (context, state) {
+        final extra = state.extra;
+        return BookingDocumentsScreen(
+          bookingId: state.pathParameters['id']!,
+          booking: extra is BookingDocumentsArgs ? extra.booking : (extra is Booking ? extra : null),
+          customerName: extra is BookingDocumentsArgs ? extra.customerName : null,
+        );
+      },
     ),
     GoRoute(
       path: '/catalog/:id/reserve',

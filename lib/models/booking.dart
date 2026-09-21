@@ -272,6 +272,13 @@ class Booking {
   factory Booking.fromJson(Map<String, dynamic> json) {
     DateTime? parseOpt(String? key) => json[key] != null ? DateTime.parse(json[key] as String) : null;
 
+    // A booking with a missing/odd date must not be able to break the whole list
+    // (older or half-created rows can have empty pickup/return timestamps).
+    DateTime? tryDate(dynamic v) => v is String ? DateTime.tryParse(v) : null;
+    final createdAtValue = tryDate(json['createdAt']) ?? DateTime.now();
+    final startAtValue = tryDate(json['startDate']) ?? createdAtValue;
+    final dayCountValue = (json['dayCount'] as num?)?.toInt() ?? 0;
+
     return Booking(
       id: json['id'] as String,
       bookingReference: json['bookingRef'] as String? ?? '',
@@ -281,8 +288,8 @@ class Booking {
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       status: bookingStatusFromString(json['status'] as String? ?? 'pending'),
       fulfillmentMethod: fulfillmentMethodFromString(json['fulfillmentMethod'] as String? ?? 'pickup'),
-      pickupAt: DateTime.parse(json['startDate'] as String),
-      returnAt: DateTime.parse(json['endDate'] as String),
+      pickupAt: startAtValue,
+      returnAt: tryDate(json['endDate']) ?? startAtValue.add(Duration(days: dayCountValue > 0 ? dayCountValue : 1)),
       nextAvailableAt: parseOpt('nextAvailableAt'),
       dayCount: (json['dayCount'] as num?)?.toInt() ?? 0,
       dailyRate: (json['dailyRate'] as num?)?.toDouble() ?? 0,
@@ -314,8 +321,8 @@ class Booking {
       releasedAt: parseOpt('releasedAt'),
       returnedAt: parseOpt('returnedAt'),
       cancelledAt: parseOpt('cancelledAt'),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      createdAt: createdAtValue,
+      updatedAt: tryDate(json['updatedAt']) ?? createdAtValue,
     );
   }
 
