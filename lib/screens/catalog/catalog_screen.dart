@@ -25,6 +25,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   String _category = 'All';
   _SortOption _sort = _SortOption.featured;
   bool _availableOnly = false;
+  bool _favoritesOnly = false;
 
   static const _categories = ['All', 'Phones', 'Cameras'];
 
@@ -34,7 +35,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     _productsFuture = ProductService.getActiveProducts();
   }
 
-  List<Product> _applyFilters(List<Product> products) {
+  List<Product> _applyFilters(List<Product> products, List<String> favorites) {
     final query = _search.trim().toLowerCase();
     var filtered = products.where((p) {
       final matchesCategory = _category == 'All' || p.effectiveCategory == _category;
@@ -42,7 +43,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
           p.name.toLowerCase().contains(query) ||
           (p.brand ?? '').toLowerCase().contains(query);
       final matchesAvailability = !_availableOnly || p.availableUnits > 0;
-      return matchesCategory && matchesSearch && matchesAvailability;
+      final matchesFavorite = !_favoritesOnly || favorites.contains(p.id);
+      return matchesCategory && matchesSearch && matchesAvailability && matchesFavorite;
     }).toList();
 
     switch (_sort) {
@@ -75,57 +77,66 @@ class _CatalogScreenState extends State<CatalogScreen> {
             return Center(child: Text('Could not load products: ${snapshot.error}'));
           }
 
-          final filtered = _applyFilters(snapshot.data ?? []);
+          return StreamBuilder<List<String>>(
+            stream: FavoritesService.favoritesStream,
+            initialData: FavoritesService.current,
+            builder: (context, favSnapshot) {
+              final favorites = favSnapshot.data ?? [];
+              final filtered = _applyFilters(snapshot.data ?? [], favorites);
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              setState(() => _productsFuture = ProductService.getActiveProducts());
-              await _productsFuture;
-            },
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: _buildFilters(filtered.length)),
-                if (filtered.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: Text('No products match your filters.')),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 0.6,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final product = filtered[index];
-                          return StreamBuilder<List<String>>(
-                            stream: FavoritesService.favoritesStream,
-                            initialData: FavoritesService.current,
-                            builder: (context, favSnapshot) {
-                              final isFav = (favSnapshot.data ?? []).contains(product.id);
+              return RefreshIndicator(
+                onRefresh: () async {
+                  setState(() => _productsFuture = ProductService.getActiveProducts());
+                  await _productsFuture;
+                },
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildFilters(filtered.length)),
+                    if (filtered.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              _favoritesOnly
+                                  ? "You haven't added any favorites yet. Tap the heart on a product to save it here."
+                                  : 'No products match your filters.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: AppColors.charcoal),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 16,
+                            crossAxisSpacing: 16,
+                            childAspectRatio: 0.6,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final product = filtered[index];
                               return CatalogProductCard(
                                 product: product,
-                                isFavorite: isFav,
-                                onToggleFavorite: () =>
-                                    FavoritesService.toggleFavorite(product.id),
+                                isFavorite: favorites.contains(product.id),
+                                onToggleFavorite: () => FavoritesService.toggleFavorite(product.id),
                                 onViewDetails: () => context.push('/catalog/${product.id}'),
-                                onReserve: () =>
-                                    context.push('/catalog/${product.id}/reserve'),
+                                onReserve: () => context.push('/catalog/${product.id}/reserve'),
                               );
                             },
-                          );
-                        },
-                        childCount: filtered.length,
+                            childCount: filtered.length,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),
@@ -173,26 +184,38 @@ class _CatalogScreenState extends State<CatalogScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          DropdownButtonFormField<_SortOption>(
+            value: _sort,
+            decoration: const InputDecoration(isDense: true),
+            items: const [
+              DropdownMenuItem(value: _SortOption.featured, child: Text('Featured')),
+              DropdownMenuItem(value: _SortOption.priceAsc, child: Text('Price: Low to High')),
+              DropdownMenuItem(value: _SortOption.priceDesc, child: Text('Price: High to Low')),
+              DropdownMenuItem(value: _SortOption.nameAsc, child: Text('Name: A to Z')),
+            ],
+            onChanged: (value) => setState(() => _sort = value ?? _SortOption.featured),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: DropdownButtonFormField<_SortOption>(
-                  value: _sort,
-                  decoration: const InputDecoration(isDense: true),
-                  items: const [
-                    DropdownMenuItem(value: _SortOption.featured, child: Text('Featured')),
-                    DropdownMenuItem(value: _SortOption.priceAsc, child: Text('Price: Low to High')),
-                    DropdownMenuItem(value: _SortOption.priceDesc, child: Text('Price: High to Low')),
-                    DropdownMenuItem(value: _SortOption.nameAsc, child: Text('Name: A to Z')),
-                  ],
-                  onChanged: (value) => setState(() => _sort = value ?? _SortOption.featured),
-                ),
-              ),
-              const SizedBox(width: 12),
               FilterChip(
                 label: const Text('Available only'),
                 selected: _availableOnly,
                 onSelected: (value) => setState(() => _availableOnly = value),
+              ),
+              FilterChip(
+                avatar: Icon(
+                  _favoritesOnly ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: 18,
+                  color: _favoritesOnly ? AppColors.white : AppColors.primary,
+                ),
+                label: const Text('Favorites'),
+                selected: _favoritesOnly,
+                selectedColor: AppColors.primary,
+                labelStyle: TextStyle(color: _favoritesOnly ? AppColors.white : AppColors.textPrimary),
+                onSelected: (value) => setState(() => _favoritesOnly = value),
               ),
             ],
           ),
