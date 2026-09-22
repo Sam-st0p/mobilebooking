@@ -89,16 +89,30 @@ class CatalogProductCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 8),
+                      // A real tap target (44x44, Android's/iOS's recommended minimum) —
+                      // the old 27x27 pill sitting right next to the rating pill was easy
+                      // to miss on a real phone, which is why favoriting felt "broken".
                       GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: onToggleFavorite,
-                        child: _pill(
-                          color: AppColors.white,
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(
-                            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                            size: 15,
-                            color: isFavorite ? AppColors.primary : AppColors.charcoal,
+                        child: Semantics(
+                          button: true,
+                          label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Center(
+                              child: _pill(
+                                color: AppColors.white,
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                  size: 15,
+                                  color: isFavorite ? AppColors.primary : AppColors.charcoal,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -119,7 +133,7 @@ class CatalogProductCard extends StatelessWidget {
                       const SizedBox(width: 3),
                       Expanded(
                         child: Text(
-                          product.category,
+                          product.effectiveCategory,
                           style: const TextStyle(fontSize: 11, color: AppColors.charcoal),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

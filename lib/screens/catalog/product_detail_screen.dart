@@ -115,7 +115,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     Text(
-                      [product.brand, product.category].where((s) => s != null && s.isNotEmpty).join(' · '),
+                      [product.brand, product.effectiveCategory].where((s) => s != null && s.isNotEmpty).join(' · '),
                       style: const TextStyle(color: AppColors.charcoal, fontSize: 12, letterSpacing: 0.4),
                     ),
                     const SizedBox(height: 4),

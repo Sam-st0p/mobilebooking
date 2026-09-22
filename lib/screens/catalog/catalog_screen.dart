@@ -37,7 +37,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<Product> _applyFilters(List<Product> products) {
     final query = _search.trim().toLowerCase();
     var filtered = products.where((p) {
-      final matchesCategory = _category == 'All' || p.category == _category;
+      final matchesCategory = _category == 'All' || p.effectiveCategory == _category;
       final matchesSearch = query.isEmpty ||
           p.name.toLowerCase().contains(query) ||
           (p.brand ?? '').toLowerCase().contains(query);

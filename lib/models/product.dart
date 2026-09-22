@@ -64,6 +64,26 @@ class Product {
   final String name;
   final String? brand;
   final String category;
+
+  /// [category] as stored on the product. It is blank for every product
+  /// right now — the `products` table has no `category` column, so the API
+  /// always sends `''` (the same missing-column situation as `brand`).
+  /// Filtering/display should use [effectiveCategory] instead, which guesses
+  /// a category from the name/brand so "Phones" and "Cameras" still work
+  /// until the database has real category data.
+  String get effectiveCategory {
+    if (category.trim().isNotEmpty) return category;
+
+    final text = '$name $brand'.toLowerCase();
+    const phoneWords = ['iphone', 'phone', 'galaxy', 'samsung', 'pixel', 'xiaomi', 'oppo', 'vivo', 'realme'];
+    const cameraWords = [
+      'camera', 'osmo', 'gopro', 'dji', 'canon', 'nikon', 'sony', 'fujifilm', 'fuji',
+      'mirrorless', 'dslr', 'gimbal', 'action cam',
+    ];
+    if (phoneWords.any(text.contains)) return 'Phones';
+    if (cameraWords.any(text.contains)) return 'Cameras';
+    return category;
+  }
   final String? shortDescription;
   final String? description;
   final double dailyRate;

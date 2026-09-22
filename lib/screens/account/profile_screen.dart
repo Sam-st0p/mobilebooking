@@ -9,8 +9,10 @@ import 'package:provider/provider.dart';
 import '../../models/user_profile.dart';
 import '../../services/auth_provider.dart';
 import '../../services/profile_service.dart';
+import '../../services/update_checker.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/form_layout.dart';
+import '../../widgets/update_dialog.dart';
 
 /// Port of `app/account/profile/page.tsx`.
 class ProfileScreen extends StatefulWidget {
@@ -314,8 +316,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: const Text('Sign Out'),
           ),
         ),
+        const SizedBox(height: 20),
+        Center(
+          child: Column(
+            children: [
+              Text('App version $kAppVersion', style: const TextStyle(fontSize: 11.5, color: AppColors.charcoal)),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: _checkingForUpdate ? null : _checkForUpdateManually,
+                child: _checkingForUpdate
+                    ? const SizedBox(
+                        height: 14,
+                        width: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Check for updates', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
       ],
     );
+  }
+
+  bool _checkingForUpdate = false;
+
+  Future<void> _checkForUpdateManually() async {
+    setState(() => _checkingForUpdate = true);
+    final info = await checkForUpdate();
+    if (!mounted) return;
+    setState(() => _checkingForUpdate = false);
+    if (info != null) {
+      showUpdateDialog(context, info);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("You're on the latest version.")),
+      );
+    }
   }
 
   static const _labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.charcoal);
