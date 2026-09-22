@@ -50,7 +50,7 @@ class SignaturePadState extends State<SignaturePad> {
         // The dashed border sits OUTSIDE the RepaintBoundary so it is not
         // included in the captured signature image.
         CustomPaint(
-          foregroundPainter: DashedBorderPainter(color: AppColors.dustyRose, radius: 12),
+          foregroundPainter: const DashedBorderPainter(color: AppColors.dustyRose, radius: 12),
           child: SizedBox(
             height: widget.height,
             width: double.infinity,

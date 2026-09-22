@@ -320,7 +320,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Center(
           child: Column(
             children: [
-              Text('App version $kAppVersion', style: const TextStyle(fontSize: 11.5, color: AppColors.charcoal)),
+              const Text('App version $kAppVersion', style: TextStyle(fontSize: 11.5, color: AppColors.charcoal)),
               const SizedBox(height: 4),
               TextButton(
                 onPressed: _checkingForUpdate ? null : _checkForUpdateManually,

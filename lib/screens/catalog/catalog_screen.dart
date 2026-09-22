@@ -185,7 +185,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<_SortOption>(
-            value: _sort,
+            initialValue: _sort,
             decoration: const InputDecoration(isDense: true),
             items: const [
               DropdownMenuItem(value: _SortOption.featured, child: Text('Featured')),

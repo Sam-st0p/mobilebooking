@@ -86,7 +86,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 height: 6,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: i == _imageIndex ? AppColors.white : AppColors.white.withOpacity(0.5),
+                                  color: i == _imageIndex ? AppColors.white : AppColors.white.withValues(alpha: 0.5),
                                 ),
                               );
                             }),
@@ -231,7 +231,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.blush.withOpacity(0.35),
+        color: AppColors.blush.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(

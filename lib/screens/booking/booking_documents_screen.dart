@@ -843,7 +843,7 @@ class _BookingDocumentsScreenState extends State<BookingDocumentsScreen> {
   Widget _buildAgreementStep() {
     final booking = _booking;
 
-    final heading = Column(
+    const heading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: const [
         Text('Rental Agreement & Terms', style: TextStyle(fontSize: 19, height: 1.25, fontWeight: FontWeight.w800)),

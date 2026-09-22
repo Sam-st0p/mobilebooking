@@ -1743,10 +1743,10 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           'Payment Submission',
           'Choose how much to pay now, then pay manually via GCash and submit your proof of payment below.',
         ),
-        NoticeBox(
+        const NoticeBox(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text(
                 'Your selected rental dates are secured once our team verifies your submitted payment.',
                 style: TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800),

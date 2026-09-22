@@ -75,7 +75,7 @@ class CatalogProductCard extends StatelessWidget {
                   child: Row(
                     children: [
                       _pill(
-                        color: AppColors.textPrimary.withOpacity(0.82),
+                        color: AppColors.textPrimary.withValues(alpha: 0.82),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
