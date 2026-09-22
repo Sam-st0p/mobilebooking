@@ -18,7 +18,7 @@ import 'package:http/http.dart' as http;
 /// Bump this with every release you publish, to match the version you set
 /// in `pubspec.yaml`'s `version:` line (the part before the `+`). If you
 /// forget to bump it, the app will just keep "finding" the same update.
-const String kAppVersion = '1.1.0';
+const String kAppVersion = '1.3.0';
 
 /// Your GitHub repo, as `owner/name` — the two parts of the URL when you
 /// visit your repo, e.g. https://github.com/OWNER/REPO.
