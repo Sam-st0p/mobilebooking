@@ -343,11 +343,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _checkForUpdateManually() async {
     setState(() => _checkingForUpdate = true);
-    final info = await checkForUpdate();
+    // Verbose check: unlike the silent one run at launch, this one is allowed
+    // to tell you WHY nothing happened — a failed check used to look
+    // identical to "you're up to date", which made a wrong repo name or a
+    // network problem invisible.
+    final result = await checkForUpdateVerbose();
     if (!mounted) return;
     setState(() => _checkingForUpdate = false);
-    if (info != null) {
-      showUpdateDialog(context, info);
+
+    if (result.hasUpdate) {
+      showUpdateDialog(context, result.update!);
+    } else if (result.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not check for updates: ${result.error}')),
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("You're on the latest version.")),

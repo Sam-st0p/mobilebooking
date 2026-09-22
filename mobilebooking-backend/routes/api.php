@@ -4,23 +4,53 @@ use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\BookingDocumentController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentSubmissionController;
-use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 
-$mapProduct = function ($p) {
+// Builds a public Supabase Storage URL from a bucket + path, the same way
+// ProfileController::photoUrl() does for avatars. Assumes the bucket is
+// PUBLIC (the website already renders these without a signed URL, so this
+// should hold) — if photos ever stop loading, that's the first thing to check.
+$supabasePublicUrl = function (string $bucket, string $path) {
+    return rtrim((string) config('services.supabase.url'), '/')
+        . '/storage/v1/object/public/' . $bucket . '/' . ltrim($path, '/');
+};
+
+$mapProduct = function ($p, $imageRows = []) use ($supabasePublicUrl) {
     // Fetch real data directly from DB columns
     $specs = is_string($p->specifications ?? '')
         ? (json_decode($p->specifications, true) ?? [])
         : (array) ($p->specifications ?? []);
 
-    // Safely extract primary image URL from direct columns or specs JSON
-    $imageUrl = $p->image_url ?? $p->image ?? '';
-    if (empty($imageUrl) && isset($specs['images']) && is_array($specs['images'])) {
-        $imageUrl = $specs['images'][0]['url'] ?? $specs['images'][0] ?? '';
+    // Real product photos live in the `product_images` table (one row per
+    // photo, with `storage_bucket` + `storage_path` and a `sort_order`) — NOT
+    // in `specifications`, which is always empty for these. This is exactly
+    // what the website's gallery reads. [$id => rows] is passed in by the
+    // caller so the catalog list only needs one extra query total, not one
+    // per product. Products with no rows there yet fall back to a single
+    // placeholder image so nothing breaks for them.
+    $imageRows = is_array($imageRows) ? $imageRows : (is_iterable($imageRows) ? iterator_to_array($imageRows) : []);
+    if ($imageRows !== []) {
+        usort($imageRows, fn ($a, $b) => ($a->sort_order ?? 0) <=> ($b->sort_order ?? 0));
+        $images = array_values(array_map(fn ($row) => [
+            'id' => (string) $row->id,
+            'url' => $supabasePublicUrl((string) $row->storage_bucket, (string) $row->storage_path),
+            'isPrimary' => (bool) $row->is_primary,
+        ], $imageRows));
+    } else {
+        // Old fallback, kept for any product that has no product_images rows yet.
+        $imageUrl = $p->image_url ?? $p->image ?? '';
+        if (empty($imageUrl) && isset($specs['images']) && is_array($specs['images'])) {
+            $imageUrl = $specs['images'][0]['url'] ?? $specs['images'][0] ?? '';
+        }
+        $images = [[
+            'id' => 'img_' . $p->id,
+            'url' => (string) $imageUrl,
+            'isPrimary' => true,
+        ]];
     }
 
     return [
@@ -37,13 +67,7 @@ $mapProduct = function ($p) {
         'status' => (string) ($p->status ?? 'active'),
         'isFeatured' => (bool) ($p->is_featured ?? false),
         'specifications' => $specs,
-        'images' => [
-            [
-                'id' => 'img_' . $p->id,
-                'url' => (string) $imageUrl,
-                'isPrimary' => true,
-            ]
-        ],
+        'images' => $images,
         'totalUnits' => (int) ($p->total_units ?? $p->quantity ?? 1),
         'availableUnits' => (int) ($p->available_units ?? $p->total_units ?? $p->quantity ?? 1),
         'rating' => (float) ($p->rating ?? 5.0),
@@ -58,15 +82,35 @@ $registerMobileRoutes = function ($prefix) use ($mapProduct) {
 
         // Full Catalog Route
         Route::get('/catalog', function () use ($mapProduct) {
-            $products = DB::table('products')->get()->map(fn ($p) => $mapProduct($p));
-            return response()->json(['success' => true, 'products' => $products]);
+            $products = DB::table('products')->get();
+
+            // One extra query for ALL products' photos, grouped in PHP — avoids
+            // running a separate product_images query per product (N+1).
+            $imagesByProduct = DB::table('product_images')
+                ->whereIn('product_id', $products->pluck('id'))
+                ->orderBy('sort_order')
+                ->get()
+                ->groupBy('product_id');
+
+            $mapped = $products->map(
+                fn ($p) => $mapProduct($p, $imagesByProduct->get($p->id, collect())->all())
+            );
+
+            return response()->json(['success' => true, 'products' => $mapped]);
         });
 
         // Single Product Route
         Route::get('/catalog/{id}', function ($id) use ($mapProduct) {
             $p = DB::table('products')->where('id', $id)->first();
             if (!$p) return response()->json(['success' => false, 'message' => 'Not found'], 404);
-            return response()->json(['success' => true, 'product' => $mapProduct($p)]);
+
+            $imageRows = DB::table('product_images')
+                ->where('product_id', $id)
+                ->orderBy('sort_order')
+                ->get()
+                ->all();
+
+            return response()->json(['success' => true, 'product' => $mapProduct($p, $imageRows)]);
         });
 
         /*
@@ -182,11 +226,36 @@ $registerMobileRoutes = function ($prefix) use ($mapProduct) {
         | JWT verification says it is. Laravel never verifies the JWT
         | signature itself here.
         */
-        // Profile: GET reads the real `profiles` row; PUT saves it; POST /photo uploads an avatar.
-        // See App\Http\Controllers\Api\ProfileController.
-        Route::get('/account/profile', [ProfileController::class, 'show']);
-        Route::put('/account/profile', [ProfileController::class, 'update']);
-        Route::post('/account/profile/photo', [ProfileController::class, 'uploadPhoto']);
+        Route::get('/account/profile', function (Request $request) {
+            $token = $request->bearerToken();
+
+            if (blank($token)) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+            }
+
+            $response = Http::withHeaders([
+                'apikey' => config('services.supabase.anon_key'),
+                'Authorization' => "Bearer {$token}",
+            ])->get(rtrim(config('services.supabase.url'), '/') . '/auth/v1/user');
+
+            if ($response->failed()) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+            }
+
+            $user = $response->json();
+
+            return response()->json([
+                'success' => true,
+                'profile' => [
+                    'id' => $user['id'] ?? null,
+                    'email' => $user['email'] ?? null,
+                    // Supabase stores app-specific fields under user_metadata.
+                    // Confirm this key matches what your signup form writes.
+                    'fullName' => $user['user_metadata']['full_name'] ?? null,
+                    'phone' => $user['phone'] ?? '',
+                ],
+            ]);
+        });
 
         /*
         |----------------------------------------------------------------

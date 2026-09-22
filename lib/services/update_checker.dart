@@ -18,13 +18,15 @@ import 'package:http/http.dart' as http;
 /// Bump this with every release you publish, to match the version you set
 /// in `pubspec.yaml`'s `version:` line (the part before the `+`). If you
 /// forget to bump it, the app will just keep "finding" the same update.
-const String kAppVersion = '1.3.0';
+const String kAppVersion = '1.4.0';
 
 /// Your GitHub repo, as `owner/name` — the two parts of the URL when you
 /// visit your repo, e.g. https://github.com/OWNER/REPO.
-/// TODO: double-check these match your actual repo before shipping —
-/// they were inferred from a screenshot, not confirmed with you directly.
-const String kGithubOwner = 'Sam-stOp';
+/// Confirmed against the repo's own Releases page: the username is
+/// "Sam-st0p" with a ZERO, not the letter O — the earlier 'Sam-stOp' guess
+/// (capital O) pointed at a repo that doesn't exist, which is why every
+/// check silently found nothing.
+const String kGithubOwner = 'Sam-st0p';
 const String kGithubRepo = 'mobilebooking';
 
 class UpdateInfo {
@@ -34,10 +36,26 @@ class UpdateInfo {
   const UpdateInfo({required this.version, required this.downloadUrl, this.releaseNotes});
 }
 
-/// Returns update info if GitHub's latest release is newer than
-/// [kAppVersion], or null if not (including on any network/parsing failure —
-/// this must never throw, since it runs silently on every app start).
-Future<UpdateInfo?> checkForUpdate() async {
+/// Result of a version check. Exactly one of three things happened:
+///  - [update] is set        -> a newer release exists
+///  - [update] is null and
+///    [error] is null        -> checked fine, you're already up to date
+///  - [error] is set         -> the check itself failed (wrong repo name,
+///                              no internet, GitHub rate limit, ...) — this
+///                              is NOT the same as "up to date", and previously
+///                              the app couldn't tell the two apart.
+class UpdateCheckResult {
+  final UpdateInfo? update;
+  final String? error;
+  const UpdateCheckResult({this.update, this.error});
+  bool get hasUpdate => update != null;
+}
+
+/// Same check as [checkForUpdate], but reports WHY it found nothing — use this
+/// for a manual "Check for updates" button, where a wrong-repo-name or
+/// network failure should be visible rather than silently reported as
+/// "you're on the latest version".
+Future<UpdateCheckResult> checkForUpdateVerbose() async {
   try {
     final response = await http
         .get(
@@ -46,12 +64,25 @@ Future<UpdateInfo?> checkForUpdate() async {
         )
         .timeout(const Duration(seconds: 10));
 
-    if (response.statusCode != 200) return null; // no releases yet, rate-limited, repo renamed, ...
+    if (response.statusCode == 404) {
+      return const UpdateCheckResult(
+        error: 'Could not find that GitHub repo or it has no releases yet. '
+            'Check kGithubOwner/kGithubRepo in update_checker.dart.',
+      );
+    }
+    if (response.statusCode == 403) {
+      return const UpdateCheckResult(error: 'GitHub is rate-limiting update checks right now. Try again later.');
+    }
+    if (response.statusCode != 200) {
+      return UpdateCheckResult(error: 'GitHub returned an unexpected error (${response.statusCode}).');
+    }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final tag = (body['tag_name'] as String?) ?? '';
     final latestVersion = tag.replaceFirst(RegExp(r'^[vV]'), '');
-    if (!_isNewer(latestVersion, kAppVersion)) return null;
+    if (!_isNewer(latestVersion, kAppVersion)) {
+      return const UpdateCheckResult(); // genuinely up to date — no error
+    }
 
     final assets = (body['assets'] as List?) ?? const [];
     String? apkUrl;
@@ -62,20 +93,28 @@ Future<UpdateInfo?> checkForUpdate() async {
         break;
       }
     }
-    // No .apk attached to the release (maybe it's still uploading) — send
-    // the person to the Releases page instead of failing silently.
+    // No .apk attached to the release (maybe it's still uploading, or was
+    // forgotten) — send the person to the Releases page instead of failing.
     apkUrl ??= (body['html_url'] as String?) ??
         'https://github.com/$kGithubOwner/$kGithubRepo/releases/latest';
 
-    return UpdateInfo(
-      version: latestVersion,
-      downloadUrl: apkUrl,
-      releaseNotes: (body['body'] as String?)?.trim().isEmpty ?? true ? null : (body['body'] as String).trim(),
+    return UpdateCheckResult(
+      update: UpdateInfo(
+        version: latestVersion,
+        downloadUrl: apkUrl,
+        releaseNotes: (body['body'] as String?)?.trim().isEmpty ?? true ? null : (body['body'] as String).trim(),
+      ),
     );
-  } catch (_) {
-    return null; // offline, DNS failure, malformed JSON, etc. — fail quietly
+  } catch (e) {
+    return UpdateCheckResult(error: 'Could not reach GitHub: $e');
   }
 }
+
+/// Returns update info if GitHub's latest release is newer than
+/// [kAppVersion], or null if not — including when the check itself fails.
+/// This must never throw, since it runs silently on every app start; use
+/// [checkForUpdateVerbose] instead wherever a failure should be visible.
+Future<UpdateInfo?> checkForUpdate() async => (await checkForUpdateVerbose()).update;
 
 /// True if [a] is a higher version than [b] ("1.2.0" > "1.10.0" is handled
 /// correctly by comparing components as integers, not as strings).
