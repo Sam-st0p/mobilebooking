@@ -15,6 +15,10 @@ import '../screens/booking/reserve_screen.dart';
 import '../screens/catalog/catalog_screen.dart';
 import '../screens/catalog/product_detail_screen.dart';
 import '../screens/coming_soon_screen.dart';
+import '../screens/guide/how_to_book_screen.dart';
+import '../screens/guide/rental_requirements_screen.dart';
+import '../screens/guide/terms_screen.dart';
+import '../screens/guide/faq_screen.dart';
 import '../screens/home_screen.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_shell.dart';
@@ -88,14 +92,14 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/how-to-book',
-      builder: (context, state) => const ComingSoonScreen(title: 'How to Book'),
+      builder: (context, state) => const HowToBookScreen(),
     ),
     GoRoute(
       path: '/rental-requirements',
-      builder: (context, state) => const ComingSoonScreen(title: 'Rental Requirements'),
+      builder: (context, state) => const RentalRequirementsScreen(),
     ),
-    GoRoute(path: '/terms', builder: (context, state) => const ComingSoonScreen(title: 'Terms & Conditions')),
-    GoRoute(path: '/faq', builder: (context, state) => const ComingSoonScreen(title: 'FAQs')),
+    GoRoute(path: '/terms', builder: (context, state) => const TermsScreen()),
+    GoRoute(path: '/faq', builder: (context, state) => const FaqScreen()),
     GoRoute(path: '/contact', builder: (context, state) => const ComingSoonScreen(title: 'Contact')),
     GoRoute(path: '/privacy', builder: (context, state) => const ComingSoonScreen(title: 'Privacy Policy')),
   ],
