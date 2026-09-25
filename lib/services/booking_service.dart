@@ -207,6 +207,7 @@ class BookingService {
     String? province,
     String? customerNotes,
     int quantity = 1,
+    String? variant,
   }) async {
     try {
       final response = await _dio.post('/mobile/bookings', data: {
@@ -227,6 +228,7 @@ class BookingService {
         if (cityMunicipality != null) 'cityMunicipality': cityMunicipality,
         if (province != null) 'province': province,
         if (customerNotes != null) 'customerNotes': customerNotes,
+        if (variant != null) 'variant': variant,
       });
       final data = response.data as Map<String, dynamic>;
       return Booking.fromJson(data['booking'] as Map<String, dynamic>);

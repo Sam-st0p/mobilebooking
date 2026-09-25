@@ -1,8 +1,10 @@
 // lib/routing/app_router.dart
 
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../models/booking.dart';
 import '../screens/account/profile_screen.dart';
+import '../screens/account/payment_history_screen.dart';
 import '../screens/auth/sign_in_screen.dart';
 import '../screens/auth/sign_up_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
@@ -38,11 +40,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/account/payments',
-          builder: (context, state) => const ComingSoonScreen(
-            title: 'Payment History',
-            note: 'Backend endpoint already exists (GET /api/mobile/account/payments) — '
-                'just needs a screen built against it.',
-          ),
+          builder: (context, state) => const PaymentHistoryScreen(),
         ),
       ],
     ),

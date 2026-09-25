@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\BookingDocumentController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentSubmissionController;
+use App\Http\Controllers\Api\PaymentHistoryController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -82,7 +83,10 @@ $registerMobileRoutes = function ($prefix) use ($mapProduct) {
 
         // Full Catalog Route
         Route::get('/catalog', function () use ($mapProduct) {
-            $products = DB::table('products')->get();
+            // Only show products customers can actually book. Without this,
+            // inactive/retired products (no live inventory, often no photos
+            // either) appeared in Browse right alongside real listings.
+            $products = DB::table('products')->where('status', 'active')->get();
 
             // One extra query for ALL products' photos, grouped in PHP — avoids
             // running a separate product_images query per product (N+1).
@@ -456,6 +460,9 @@ $registerMobileRoutes = function ($prefix) use ($mapProduct) {
         | src/services/notificationService.ts. No realtime push here —
         | Flutter should poll, same fallback the web app itself uses.
         */
+        // Payment History (was a "Coming soon" placeholder — see PaymentHistoryController).
+        Route::get('/account/payments', [PaymentHistoryController::class, 'index']);
+
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     });

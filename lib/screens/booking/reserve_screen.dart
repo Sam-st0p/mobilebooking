@@ -210,6 +210,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   static const _pickupConvenienceFeeAmount = 100.0;
 
   FulfillmentMethod? _fulfillment;
+  String? _selectedVariant;
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
   final _provinceController = TextEditingController();
@@ -358,6 +359,11 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   double get _total => _subtotal + _depositTotal + _pickupConvenienceFee;
   double get _dueNow => _paymentOption == 'deposit_50' ? (_total * 0.5) : _total;
 
+  List<String> get _availableColors {
+    final raw = widget.product.specifications['colors'] ?? widget.product.specifications['Color'] ?? '';
+    return raw.split(',').map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
+  }
+
   int get _maxQuantity => (_availableForRange ?? widget.product.availableUnits).clamp(1, 1000).toInt();
 
   bool _isValidPhone(String v) => RegExp(r'^\d{11}$').hasMatch(v);
@@ -376,6 +382,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
             _customerFacebookController.text.trim().isNotEmpty &&
             _customerInstagramController.text.trim().isNotEmpty;
       case _Step.reservation:
+        final hasValidVariant = _availableColors.isEmpty || _selectedVariant != null;
         final hasValidLocation = _fulfillment == FulfillmentMethod.pickup ||
             (_fulfillment == FulfillmentMethod.delivery &&
                 _addressController.text.trim().isNotEmpty &&
@@ -384,6 +391,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         return _startDate != null &&
             _pickupAt != null &&
             !_isPickupTimePast &&
+            hasValidVariant &&
             hasValidLocation &&
             !_checkingAvailability &&
             _availabilityError == null &&
@@ -440,6 +448,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         'deliveryProvince': _provinceController.text,
         'notes': _notesController.text,
         'quantity': _quantity,
+        'variant': _selectedVariant,
         'paymentOption': _paymentOption,
         'createdBookingId': _createdBooking?.id,
       };
@@ -518,6 +527,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
       _provinceController.text = text('deliveryProvince');
       _notesController.text = text('notes');
       _quantity = ((v['quantity'] as int?) ?? 1).clamp(1, 1000).toInt();
+      _selectedVariant = v['variant'] as String?;
       _paymentOption = v['paymentOption'] == 'full' ? 'full' : 'deposit_50';
 
       _savedAt = snapshot.savedAt;
@@ -682,6 +692,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
         quantity: _quantity,
         cityMunicipality: isDelivery ? _cityController.text.trim() : null,
         province: isDelivery ? _provinceController.text.trim() : null,
+        variant: _selectedVariant,
       );
 
       if (!mounted) return;
@@ -1051,6 +1062,10 @@ class _ReservationWizardState extends State<_ReservationWizard> {
                 _timePanel(),
                 const SizedBox(height: 12),
                 _fulfillmentPanel(),
+                if (_availableColors.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _variantPanel(),
+                ],
                 const SizedBox(height: 12),
                 _quantityPanel(),
               ],
@@ -1547,6 +1562,29 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     );
   }
 
+  // --- Color / variant (only shown for products that have colors) -------
+
+  Widget _variantPanel() {
+    return SectionPanel(
+      title: 'Choose a color',
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final color in _availableColors)
+            ChoiceChip(
+              label: Text(color, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              selected: _selectedVariant == color,
+              onSelected: (_) {
+                setState(() => _selectedVariant = color);
+                _scheduleSave();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   // --- 4. Quantity -------------------------------------------------------
 
   Widget _quantityPanel() {
@@ -1630,6 +1668,7 @@ class _ReservationWizardState extends State<_ReservationWizard> {
       if (start == null) 'Choose your rental dates.',
       if (_pickupTime == null) 'Choose a pickup or delivery time.',
       if (_fulfillment == null) 'Choose pickup or delivery.',
+      if (_availableColors.isNotEmpty && _selectedVariant == null) 'Choose a color.',
     ];
 
     String datesLabel = 'Not selected yet';
@@ -1743,10 +1782,10 @@ class _ReservationWizardState extends State<_ReservationWizard> {
           'Payment Submission',
           'Choose how much to pay now, then pay manually via GCash and submit your proof of payment below.',
         ),
-        const NoticeBox(
+        NoticeBox(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+            children: const [
               Text(
                 'Your selected rental dates are secured once our team verifies your submitted payment.',
                 style: TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800),
