@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BookingDocumentController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentSubmissionController;
 use App\Http\Controllers\Api\PaymentHistoryController;
+use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -230,36 +231,13 @@ $registerMobileRoutes = function ($prefix) use ($mapProduct) {
         | JWT verification says it is. Laravel never verifies the JWT
         | signature itself here.
         */
-        Route::get('/account/profile', function (Request $request) {
-            $token = $request->bearerToken();
-
-            if (blank($token)) {
-                return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
-            }
-
-            $response = Http::withHeaders([
-                'apikey' => config('services.supabase.anon_key'),
-                'Authorization' => "Bearer {$token}",
-            ])->get(rtrim(config('services.supabase.url'), '/') . '/auth/v1/user');
-
-            if ($response->failed()) {
-                return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
-            }
-
-            $user = $response->json();
-
-            return response()->json([
-                'success' => true,
-                'profile' => [
-                    'id' => $user['id'] ?? null,
-                    'email' => $user['email'] ?? null,
-                    // Supabase stores app-specific fields under user_metadata.
-                    // Confirm this key matches what your signup form writes.
-                    'fullName' => $user['user_metadata']['full_name'] ?? null,
-                    'phone' => $user['phone'] ?? '',
-                ],
-            ]);
-        });
+        // Profile: GET reads the real `profiles` row; PUT saves it; POST /photo
+        // uploads an avatar. See App\Http\Controllers\Api\ProfileController.
+        // (This previously regressed to a GET-only inline closure when a later
+        // patch rebuilt this file from an older base — restored here.)
+        Route::get('/account/profile', [ProfileController::class, 'show']);
+        Route::put('/account/profile', [ProfileController::class, 'update']);
+        Route::post('/account/profile/photo', [ProfileController::class, 'uploadPhoto']);
 
         /*
         |----------------------------------------------------------------

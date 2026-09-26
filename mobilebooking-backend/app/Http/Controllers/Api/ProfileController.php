@@ -243,7 +243,10 @@ class ProfileController extends Controller
         $p = $row ? (array) $row : [];
 
         $get = function (string $field) use ($p) {
-            foreach (self::COLUMNS[$field] as $column) {
+            // Defensive: self::COLUMNS[$field] should always exist for the field
+            // names used below, but a missing/mistyped entry must degrade to
+            // "no value found" instead of crashing the whole profile load.
+            foreach (self::COLUMNS[$field] ?? [] as $column) {
                 if (array_key_exists($column, $p) && $p[$column] !== null && $p[$column] !== '') {
                     return $p[$column];
                 }
@@ -318,7 +321,7 @@ class ProfileController extends Controller
     /** First candidate column that really exists in the table. */
     private function columnFor(string $field, array $columns): ?string
     {
-        foreach (self::COLUMNS[$field] as $candidate) {
+        foreach (self::COLUMNS[$field] ?? [] as $candidate) {
             if (in_array($candidate, $columns, true)) {
                 return $candidate;
             }
