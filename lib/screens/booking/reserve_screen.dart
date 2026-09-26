@@ -243,8 +243,43 @@ class _ReservationWizardState extends State<_ReservationWizard> {
   @override
   void initState() {
     super.initState();
+    // Prefill from the signed-in customer's saved profile FIRST, so a
+    // returning customer doesn't retype their name/phone/links on every
+    // booking. Runs before _restoreDraft() so an in-progress draft for this
+    // specific product (if any) still wins over the generic profile default.
+    _prefillFromProfile();
     _loadCalendar();
     _restoreDraft();
+  }
+
+  /// Fills Rental Details from the customer's profile where the two line up
+  /// 1:1. Only Street/Barangay gets a value from `fullAddress`, since the
+  /// profile stores address as one combined string while this form splits
+  /// it into street/city/province — City and Province cannot be safely
+  /// guessed from that string, so those stay blank for the customer to fill
+  /// in themselves.
+  void _prefillFromProfile() {
+    final profile = context.read<AppAuth>().profile;
+    if (profile == null) return;
+
+    if (profile.displayName.trim().isNotEmpty) {
+      _customerFullNameController.text = profile.displayName.trim();
+    }
+    if (profile.email.trim().isNotEmpty) {
+      _customerEmailController.text = profile.email.trim();
+    }
+    if ((profile.phoneNumber ?? '').trim().isNotEmpty) {
+      _customerPhoneController.text = profile.phoneNumber!.trim();
+    }
+    if ((profile.fullAddress ?? '').trim().isNotEmpty) {
+      _customerStreetController.text = profile.fullAddress!.trim();
+    }
+    if ((profile.facebookLink ?? '').trim().isNotEmpty) {
+      _customerFacebookController.text = profile.facebookLink!.trim();
+    }
+    if ((profile.instagramLink ?? '').trim().isNotEmpty) {
+      _customerInstagramController.text = profile.instagramLink!.trim();
+    }
   }
 
   @override
