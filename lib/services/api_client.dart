@@ -161,6 +161,40 @@ class ApiClient {
   }
 }
 
+/// Retries a quick read (catalog, profile, ...) a few times with a short
+/// delay, to ride out the backend's free-tier cold start: when it has been
+/// idle, the host can take up to ~60-90s to wake up, and the very first
+/// request afterwards sometimes fails fast (a 502/503 while it's still
+/// booting) rather than waiting out a slow timeout. A short retry loop turns
+/// that one-off failure into "loads a few seconds later" instead of leaving
+/// the person stuck on an error until they manually restart the app.
+///
+/// Only meant for safe-to-repeat GET-style reads — never wrap something that
+/// creates or changes data (a booking, a payment, a file upload), since a
+/// retried write could run twice.
+Future<T> withColdStartRetry<T>(
+  Future<T> Function() attempt, {
+  int maxAttempts = 3,
+  Duration delay = const Duration(seconds: 4),
+  /// Return false for an error that means "the server answered normally and
+  /// said no" (e.g. a clean 404) rather than "the server is still waking
+  /// up" — retrying that kind of error only delays the correct result.
+  /// Defaults to retrying everything.
+  bool Function(Object error)? retryIf,
+}) async {
+  for (var i = 0; i < maxAttempts; i++) {
+    try {
+      return await attempt();
+    } catch (e) {
+      final shouldRetry = retryIf?.call(e) ?? true;
+      if (!shouldRetry || i == maxAttempts - 1) rethrow;
+      await Future.delayed(delay);
+    }
+  }
+  // Unreachable — the loop above always returns or rethrows on the last try.
+  throw StateError('withColdStartRetry: no attempts were made.');
+}
+
 String apiErrorMessage(Object error, {String fallback = 'Something went wrong. Please try again.'}) {
   if (error is DioException) {
     final data = error.response?.data;

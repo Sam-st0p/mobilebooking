@@ -1,6 +1,7 @@
 // lib/services/auth_provider.dart
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
+import 'api_client.dart';
 import 'auth_service.dart';
 import 'profile_service.dart';
 
@@ -31,7 +32,11 @@ class AppAuth extends ChangeNotifier {
 
   Future<void> _loadProfile() async {
     try {
-      final fetchedProfile = await ProfileService.getMyProfile();
+      // Retried: this runs on every app launch, so if it hits the backend
+      // right as a sleeping free-tier host is waking up, a bare failure here
+      // would wrongly look like "not signed in" and boot the person to the
+      // sign-in screen even though their session is fine.
+      final fetchedProfile = await withColdStartRetry(ProfileService.getMyProfile);
       if (fetchedProfile == null) {
         // Token was present but rejected/expired and couldn't be refreshed.
         user = null;

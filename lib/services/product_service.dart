@@ -13,10 +13,15 @@ class ProductService {
   static Future<List<Product>> getActiveProducts() async {
     if (!ApiConfig.isConfigured) return MockData.getActiveProducts();
     try {
-      final response = await _dio.get('/mobile/catalog');
-      final data = response.data as Map<String, dynamic>;
-      final rows = (data['products'] as List).cast<Map<String, dynamic>>();
-      return rows.map(Product.fromJson).toList();
+      // Wrapped so a sleepy free-tier backend gets a couple of quiet retries
+      // instead of showing "Could not load products" until the app is
+      // restarted — see withColdStartRetry's doc comment.
+      return await withColdStartRetry(() async {
+        final response = await _dio.get('/mobile/catalog');
+        final data = response.data as Map<String, dynamic>;
+        final rows = (data['products'] as List).cast<Map<String, dynamic>>();
+        return rows.map(Product.fromJson).toList();
+      });
     } catch (e) {
       throw Exception(apiErrorMessage(e, fallback: 'Could not load products.'));
     }
@@ -26,9 +31,16 @@ class ProductService {
   static Future<Product?> getProductById(String idOrSlug) async {
     if (!ApiConfig.isConfigured) return MockData.getProductById(idOrSlug);
     try {
-      final response = await _dio.get('/mobile/catalog/$idOrSlug');
-      final data = response.data as Map<String, dynamic>;
-      return Product.fromJson(data['product'] as Map<String, dynamic>);
+      return await withColdStartRetry(
+        () async {
+          final response = await _dio.get('/mobile/catalog/$idOrSlug');
+          final data = response.data as Map<String, dynamic>;
+          return Product.fromJson(data['product'] as Map<String, dynamic>);
+        },
+        // A clean 404 means "no such product" — retrying it would only
+        // delay the correct answer, not fix anything.
+        retryIf: (e) => !(e is DioException && e.response?.statusCode == 404),
+      );
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
       throw Exception(apiErrorMessage(e, fallback: 'Could not load this product.'));
