@@ -420,6 +420,11 @@ class BookingController extends Controller
             ORDER BY bi.created_at
         ', [$bookingId]);
 
+        // Real product photos live in `product_images` (same source the
+        // catalog uses), not in products.specifications, so look them up
+        // once for every product in this booking.
+        $imageByProduct = $this->primaryImageUrls(array_column($items, 'product_id'));
+
         $dayCount = (int) ($b->day_count ?? 1);
         $mappedItems = [];
         $rentalSubtotal = 0.0;
@@ -446,7 +451,7 @@ class BookingController extends Controller
                 'productName' => $item->product_name_snapshot,
                 'brand' => $product['brand'],
                 'category' => $product['category'],
-                'image' => $specs['image'] ?? '',
+                'image' => $imageByProduct[$item->product_id] ?? ($specs['image'] ?? ''),
                 'quantity' => $quantity,
                 'dailyRate' => $dailyRate,
                 'refundableDeposit' => (float) $item->deposit_per_unit_snapshot,
@@ -516,7 +521,7 @@ class BookingController extends Controller
                 'name' => $primary->product_name_snapshot ?? 'Item',
                 'brand' => $primaryProduct['brand'],
                 'category' => $primaryProduct['category'],
-                'image' => $primarySpecs['image'] ?? '',
+                'image' => ($primary ? ($imageByProduct[$primary->product_id] ?? null) : null) ?? ($primarySpecs['image'] ?? ''),
                 'pricePerDay' => $primary ? (float) $primary->daily_rate_snapshot : 0,
                 'currency' => 'PHP',
                 'included' => $primaryIncluded,
@@ -537,6 +542,43 @@ class BookingController extends Controller
             'createdAt' => $this->isoOrNull($b->created_at),
             'updatedAt' => $this->isoOrNull($b->updated_at),
         ];
+    }
+
+    /**
+     * [product_id => public URL] of each product's main photo from
+     * `product_images`: the row marked is_primary, else the lowest
+     * sort_order. Products with no photo rows are simply left out.
+     */
+    private function primaryImageUrls(array $productIds): array
+    {
+        $productIds = array_values(array_unique(array_filter($productIds)));
+        if ($productIds === []) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('product_images')
+                ->whereIn('product_id', $productIds)
+                ->orderByDesc('is_primary')
+                ->orderBy('sort_order')
+                ->get(['product_id', 'storage_bucket', 'storage_path']);
+        } catch (\Throwable $e) {
+            // A missing photo must never break the bookings list.
+            report($e);
+
+            return [];
+        }
+
+        $baseUrl = rtrim((string) config('services.supabase.url'), '/') . '/storage/v1/object/public/';
+        $urls = [];
+        foreach ($rows as $row) {
+            if (isset($urls[$row->product_id]) || blank($row->storage_path)) {
+                continue;
+            }
+            $urls[$row->product_id] = $baseUrl . $row->storage_bucket . '/' . ltrim((string) $row->storage_path, '/');
+        }
+
+        return $urls;
     }
 
     private function isoOrNull(?string $value): ?string
