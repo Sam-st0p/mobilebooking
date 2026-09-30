@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
@@ -223,6 +224,8 @@ class BookingController extends Controller
 
             return response()->json(['error' => 'Your booking was created, but we could not load its details. Please check your bookings list.'], 500);
         }
+
+        $this->rememberProvinceOnProfile($request, trim($data['customerProvince']));
 
         return response()->json(['booking' => $booking], 201);
     }
@@ -579,6 +582,33 @@ class BookingController extends Controller
         }
 
         return $urls;
+    }
+
+    /**
+     * First booking with no Province on file: save the one they just picked
+     * to `profiles.province`, so the next booking is prefilled. Never
+     * overwrites a Province the customer already saved on their Profile.
+     * Best-effort only — it must never fail an already-created booking.
+     */
+    private function rememberProvinceOnProfile(Request $request, string $province): void
+    {
+        if ($province === '') {
+            return;
+        }
+
+        try {
+            $userId = $this->resolveUserId($request);
+            if (blank($userId) || !Schema::hasColumn('profiles', 'province')) {
+                return;
+            }
+
+            DB::table('profiles')
+                ->where('id', $userId)
+                ->where(fn ($q) => $q->whereNull('province')->orWhere('province', ''))
+                ->update(['province' => $province]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     private function isoOrNull(?string $value): ?string
