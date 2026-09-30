@@ -11,6 +11,7 @@ import '../../services/auth_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/update_checker.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/ph_provinces.dart';
 import '../../widgets/form_layout.dart';
 import '../../widgets/update_dialog.dart';
 
@@ -26,8 +27,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
+  final _cityController = TextEditingController();
   final _facebookController = TextEditingController();
   final _instagramController = TextEditingController();
+  String? _province;
 
   bool _initialized = false;
   bool _saving = false;
@@ -39,6 +42,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController.text = profile.displayName;
     _phoneController.text = profile.phoneNumber ?? '';
     _addressController.text = profile.fullAddress ?? '';
+    _cityController.text = profile.cityMunicipality ?? '';
+    final savedProvince = profile.province?.trim();
+    _province = kPhilippineProvinces.contains(savedProvince) ? savedProvince : null;
     _facebookController.text = profile.facebookLink ?? '';
     _instagramController.text = profile.instagramLink ?? '';
     _initialized = true;
@@ -53,6 +59,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _cityController.dispose();
     _facebookController.dispose();
     _instagramController.dispose();
     super.dispose();
@@ -70,6 +77,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         displayName: _nameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
         fullAddress: _addressController.text.trim(),
+        cityMunicipality: _cityController.text.trim(),
+        province: _province,
         facebookLink: _facebookController.text.trim(),
         instagramLink: _instagramController.text.trim(),
       );
@@ -250,14 +259,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 16),
         LabeledField(
-          label: 'Full address',
+          label: 'Street / Barangay',
           required: false,
           child: TextField(
             controller: _addressController,
-            maxLines: 2,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(hintText: 'House/unit number, street, subdivision, and barangay'),
             onChanged: (_) => setState(() => _successMessage = null),
+          ),
+        ),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'City / Municipality',
+          required: false,
+          child: TextField(
+            controller: _cityController,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(hintText: 'e.g. Manila'),
+            onChanged: (_) => setState(() => _successMessage = null),
+          ),
+        ),
+        const SizedBox(height: 16),
+        LabeledField(
+          label: 'Province',
+          required: false,
+          note: 'Your address fills in automatically when you book.',
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _province,
+                isExpanded: true,
+                menuMaxHeight: 320,
+                hint: const Text('Select province', style: TextStyle(color: AppColors.charcoal, fontSize: 14)),
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                items: [
+                  for (final p in kPhilippineProvinces) DropdownMenuItem<String>(value: p, child: Text(p)),
+                ],
+                onChanged: (p) => setState(() {
+                  _province = p;
+                  _successMessage = null;
+                }),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 16),

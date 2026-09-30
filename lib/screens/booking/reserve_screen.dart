@@ -252,12 +252,10 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     _restoreDraft();
   }
 
-  /// Fills Rental Details from the customer's profile where the two line up
-  /// 1:1. Only Street/Barangay gets a value from `fullAddress`, since the
-  /// profile stores address as one combined string while this form splits
-  /// it into street/city/province — City and Province cannot be safely
-  /// guessed from that string, so those stay blank for the customer to fill
-  /// in themselves.
+  /// Fills Rental Details from the customer's profile. The profile stores
+  /// the address in the same three parts as this form: Street/Barangay
+  /// (`fullAddress`), City/Municipality and Province — saved on the Profile
+  /// page, or remembered by the backend after the customer's first booking.
   void _prefillFromProfile() {
     final profile = context.read<AppAuth>().profile;
     if (profile == null) return;
@@ -273,6 +271,13 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     }
     if ((profile.fullAddress ?? '').trim().isNotEmpty) {
       _customerStreetController.text = profile.fullAddress!.trim();
+    }
+    if ((profile.cityMunicipality ?? '').trim().isNotEmpty) {
+      _customerCityController.text = profile.cityMunicipality!.trim();
+    }
+    final savedProvince = profile.province?.trim();
+    if (savedProvince != null && kPhilippineProvinces.contains(savedProvince)) {
+      _customerProvince = savedProvince;
     }
     if ((profile.facebookLink ?? '').trim().isNotEmpty) {
       _customerFacebookController.text = profile.facebookLink!.trim();
@@ -537,14 +542,25 @@ class _ReservationWizardState extends State<_ReservationWizard> {
     final hour12 = v['hour12'] as int?;
 
     setState(() {
-      _customerFullNameController.text = text('fullName');
-      _customerEmailController.text = text('email');
-      _customerPhoneController.text = text('phone');
-      _customerStreetController.text = text('street');
-      _customerCityController.text = text('city');
-      _customerFacebookController.text = text('facebook');
-      _customerInstagramController.text = text('instagram');
-      _customerProvince = (province != null && kPhilippineProvinces.contains(province)) ? province : null;
+      // A draft value wins only when it has something in it. An empty box
+      // in an older draft must not wipe out what was just prefilled from the
+      // profile (e.g. Facebook/Instagram links saved after the draft).
+      void restore(TextEditingController c, String key) {
+        final value = text(key).trim();
+        if (value.isNotEmpty) c.text = value;
+      }
+      restore(_customerFullNameController, 'fullName');
+      restore(_customerEmailController, 'email');
+      restore(_customerPhoneController, 'phone');
+      restore(_customerStreetController, 'street');
+      restore(_customerCityController, 'city');
+      restore(_customerFacebookController, 'facebook');
+      restore(_customerInstagramController, 'instagram');
+      // A draft's own Province wins; if the draft has none, keep the one
+      // prefilled from the profile instead of blanking it.
+      if (province != null && kPhilippineProvinces.contains(province)) {
+        _customerProvince = province;
+      }
 
       _startDate = start;
       _endDate = end;
@@ -731,6 +747,15 @@ class _ReservationWizardState extends State<_ReservationWizard> {
       );
 
       if (!mounted) return;
+      // The backend saves Street/City/Province to the profile where it had none, so
+      // reload the profile — the next booking then starts prefilled.
+      final auth = context.read<AppAuth>();
+      final p = auth.profile;
+      if ((p?.province ?? '').trim().isEmpty ||
+          (p?.cityMunicipality ?? '').trim().isEmpty ||
+          (p?.fullAddress ?? '').trim().isEmpty) {
+        unawaited(auth.refreshProfile());
+      }
       setState(() {
         _createdBooking = booking;
         _creatingBooking = false;

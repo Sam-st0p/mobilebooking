@@ -26,6 +26,8 @@ class ProfileService {
     String? displayName,
     String? phoneNumber,
     String? fullAddress,
+    String? cityMunicipality,
+    String? province,
     String? facebookLink,
     String? instagramLink,
   }) async {
@@ -34,6 +36,8 @@ class ProfileService {
         if (displayName != null) 'displayName': displayName,
         if (phoneNumber != null) 'phoneNumber': phoneNumber,
         if (fullAddress != null) 'fullAddress': fullAddress,
+        if (cityMunicipality != null) 'cityMunicipality': cityMunicipality,
+        if (province != null) 'province': province,
         if (facebookLink != null) 'facebookLink': facebookLink,
         if (instagramLink != null) 'instagramLink': instagramLink,
       });

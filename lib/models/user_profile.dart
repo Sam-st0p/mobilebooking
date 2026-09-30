@@ -9,6 +9,8 @@ class UserProfile {
   final String? phoneNumber;
   final String? birthDate;
   final String? fullAddress;
+  final String? cityMunicipality;
+  final String? province;
   final String? facebookLink;
   final String? instagramLink;
   final String accountStatus;
@@ -26,6 +28,8 @@ class UserProfile {
     this.phoneNumber,
     this.birthDate,
     this.fullAddress,
+    this.cityMunicipality,
+    this.province,
     this.facebookLink,
     this.instagramLink,
     required this.accountStatus,
@@ -45,6 +49,8 @@ class UserProfile {
       phoneNumber: json['phoneNumber'] as String?,
       birthDate: json['birthDate'] as String?,
       fullAddress: json['fullAddress'] as String?,
+      cityMunicipality: json['cityMunicipality'] as String?,
+      province: json['province'] as String?,
       facebookLink: json['facebookLink'] as String?,
       instagramLink: json['instagramLink'] as String?,
       accountStatus: json['accountStatus'] as String? ?? 'active',

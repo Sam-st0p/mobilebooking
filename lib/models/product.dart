@@ -98,6 +98,12 @@ class Product {
   final double rating;
   final int reviewCount;
   final List<ProductReview> reviews;
+
+  /// True only when the product has at least one real review. The API
+  /// defaults [rating] to 5.0 when a product has none, so UI should check
+  /// this before showing stars/rating.
+  bool get hasReviews => reviewCount > 0 || reviews.isNotEmpty;
+
   final String createdAt;
   final String updatedAt;
 

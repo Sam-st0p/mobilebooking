@@ -74,22 +74,24 @@ class CatalogProductCard extends StatelessWidget {
                   right: 10,
                   child: Row(
                     children: [
-                      _pill(
-                        color: AppColors.textPrimary.withValues(alpha: 0.82),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFC94D)),
-                            const SizedBox(width: 3),
-                            Text(
-                              product.rating.toStringAsFixed(1),
-                              style: const TextStyle(
-                                  color: AppColors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                            ),
-                          ],
+                      if (product.hasReviews) ...[
+                        _pill(
+                          color: AppColors.textPrimary.withValues(alpha: 0.82),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFC94D)),
+                              const SizedBox(width: 3),
+                              Text(
+                                product.rating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                    color: AppColors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                      ],
                       // A real tap target (44x44, Android's/iOS's recommended minimum) —
                       // the old 27x27 pill sitting right next to the rating pill was easy
                       // to miss on a real phone, which is why favoriting felt "broken".

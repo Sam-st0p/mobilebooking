@@ -62,17 +62,120 @@ class _BookingsListScreenState extends State<BookingsListScreen> {
                 onAction: () => context.go('/catalog'),
               );
             }
+            // Index 0 is the status summary; bookings follow from index 1.
             return ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: bookings.length,
+              itemCount: bookings.length + 1,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) => _BookingCard(
-                booking: bookings[i],
-                onChanged: () => setState(_load),
-              ),
+              itemBuilder: (context, i) => i == 0
+                  ? _StatusSummary(bookings: bookings)
+                  : _BookingCard(
+                      booking: bookings[i - 1],
+                      onChanged: () => setState(_load),
+                    ),
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Which summary bucket a booking belongs to. Every status lands in exactly
+/// one bucket, so the three counts always add up to the total.
+enum _SummaryGroup { completed, pending, cancelled }
+
+_SummaryGroup _groupFor(BookingStatus status) {
+  switch (status) {
+    case BookingStatus.returned:
+      return _SummaryGroup.completed;
+    case BookingStatus.cancelled:
+    case BookingStatus.rejected:
+      return _SummaryGroup.cancelled;
+    case BookingStatus.draft:
+    case BookingStatus.pending:
+    case BookingStatus.approved:
+    case BookingStatus.confirmed:
+    case BookingStatus.readyForRelease:
+    case BookingStatus.released:
+      return _SummaryGroup.pending;
+  }
+}
+
+/// Completed / Pending / Cancelled counts, computed from the loaded bookings
+/// so they refresh whenever the list reloads (pull-to-refresh, cancel, etc).
+class _StatusSummary extends StatelessWidget {
+  final List<Booking> bookings;
+  const _StatusSummary({required this.bookings});
+
+  @override
+  Widget build(BuildContext context) {
+    int count(_SummaryGroup g) => bookings.where((b) => _groupFor(b.status) == g).length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: _SummaryTile(
+            label: 'Completed',
+            count: count(_SummaryGroup.completed),
+            fg: AppColors.statusGreen,
+            bg: AppColors.statusGreenBg,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _SummaryTile(
+            label: 'Pending',
+            count: count(_SummaryGroup.pending),
+            fg: AppColors.statusYellow,
+            bg: AppColors.statusYellowBg,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _SummaryTile(
+            label: 'Cancelled',
+            count: count(_SummaryGroup.cancelled),
+            fg: AppColors.statusRed,
+            bg: AppColors.statusRedBg,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color fg;
+  final Color bg;
+  const _SummaryTile({required this.label, required this.count, required this.fg, required this.bg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$count',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: fg)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: fg, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }

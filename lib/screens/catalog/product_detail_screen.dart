@@ -121,16 +121,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     const SizedBox(height: 4),
                     Text(product.name,
                         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text('${product.rating.toStringAsFixed(1)} ★',
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 6),
-                        Text('(${product.reviewCount} reviews)',
-                            style: const TextStyle(color: AppColors.charcoal)),
-                      ],
-                    ),
+                    if (product.hasReviews) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text('${product.rating.toStringAsFixed(1)} ★',
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 6),
+                          Text('(${product.reviewCount} reviews)',
+                              style: const TextStyle(color: AppColors.charcoal)),
+                        ],
+                      ),
+                    ],
                     if (product.description != null) ...[
                       const SizedBox(height: 16),
                       Text(product.description!,
