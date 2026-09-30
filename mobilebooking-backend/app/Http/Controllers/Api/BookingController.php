@@ -225,7 +225,11 @@ class BookingController extends Controller
             return response()->json(['error' => 'Your booking was created, but we could not load its details. Please check your bookings list.'], 500);
         }
 
-        $this->rememberProvinceOnProfile($request, trim($data['customerProvince']));
+        $this->rememberAddressOnProfile($request, [
+            'full_address' => trim($data['customerStreetBarangay']),
+            'city_municipality' => trim($data['customerCityMunicipality']),
+            'province' => trim($data['customerProvince']),
+        ]);
 
         return response()->json(['booking' => $booking], 201);
     }
@@ -585,27 +589,30 @@ class BookingController extends Controller
     }
 
     /**
-     * First booking with no Province on file: save the one they just picked
-     * to `profiles.province`, so the next booking is prefilled. Never
-     * overwrites a Province the customer already saved on their Profile.
-     * Best-effort only — it must never fail an already-created booking.
+     * Street / City / Province the customer typed on this booking are saved
+     * to their profile ONLY where the profile has nothing yet, so the next
+     * booking is prefilled. Never overwrites what they saved on their
+     * Profile page. Best-effort — it must never fail a created booking.
+     *
+     * @param array<string, string> $values  [profiles column => value]
      */
-    private function rememberProvinceOnProfile(Request $request, string $province): void
+    private function rememberAddressOnProfile(Request $request, array $values): void
     {
-        if ($province === '') {
-            return;
-        }
-
         try {
             $userId = $this->resolveUserId($request);
-            if (blank($userId) || !Schema::hasColumn('profiles', 'province')) {
+            if (blank($userId)) {
                 return;
             }
 
-            DB::table('profiles')
-                ->where('id', $userId)
-                ->where(fn ($q) => $q->whereNull('province')->orWhere('province', ''))
-                ->update(['province' => $province]);
+            foreach ($values as $column => $value) {
+                if ($value === '' || !Schema::hasColumn('profiles', $column)) {
+                    continue;
+                }
+                DB::table('profiles')
+                    ->where('id', $userId)
+                    ->where(fn ($q) => $q->whereNull($column)->orWhere($column, ''))
+                    ->update([$column => $value]);
+            }
         } catch (\Throwable $e) {
             report($e);
         }

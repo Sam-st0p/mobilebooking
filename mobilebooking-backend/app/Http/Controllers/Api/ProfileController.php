@@ -40,6 +40,7 @@ class ProfileController extends Controller
         'phoneNumber' => ['phone_number', 'phone'],
         'birthDate' => ['birth_date', 'birthdate', 'date_of_birth'],
         'fullAddress' => ['full_address', 'address'],
+        'cityMunicipality' => ['city_municipality'],
         'province' => ['province'],
         'facebookLink' => ['facebook_link', 'facebook_url', 'facebook'],
         'instagramLink' => ['instagram_link', 'instagram_url', 'instagram'],
@@ -72,6 +73,7 @@ class ProfileController extends Controller
             'displayName' => ['sometimes', 'required', 'string', 'min:2', 'max:160'],
             'phoneNumber' => ['sometimes', 'nullable', 'string', 'regex:/^\d{11}$/'],
             'fullAddress' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'cityMunicipality' => ['sometimes', 'nullable', 'string', 'max:120'],
             'province' => ['sometimes', 'nullable', 'string', 'max:120'],
             'facebookLink' => ['sometimes', 'nullable', 'string', 'max:500'],
             'instagramLink' => ['sometimes', 'nullable', 'string', 'max:500'],
@@ -106,11 +108,13 @@ class ProfileController extends Controller
         $current = (array) $existing;
         $updates = [];
 
-        if (array_key_exists('province', $data)) {
-            $data['province'] = filled($data['province']) ? trim($data['province']) : null;
+        foreach (['cityMunicipality', 'province'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = filled($data[$field]) ? trim($data[$field]) : null;
+            }
         }
 
-        foreach (['displayName', 'phoneNumber', 'fullAddress', 'province', 'facebookLink', 'instagramLink'] as $field) {
+        foreach (['displayName', 'phoneNumber', 'fullAddress', 'cityMunicipality', 'province', 'facebookLink', 'instagramLink'] as $field) {
             if (!array_key_exists($field, $data)) {
                 continue;
             }
@@ -285,6 +289,7 @@ class ProfileController extends Controller
             'phoneNumber' => $str($get('phoneNumber')) ?? (filled($user['phone'] ?? null) ? (string) $user['phone'] : null),
             'birthDate' => $str($get('birthDate')),
             'fullAddress' => $str($get('fullAddress')),
+            'cityMunicipality' => $str($get('cityMunicipality')),
             'province' => $str($get('province')),
             'facebookLink' => $str($get('facebookLink')),
             'instagramLink' => $str($get('instagramLink')),
