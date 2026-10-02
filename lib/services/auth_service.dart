@@ -38,10 +38,7 @@ class AuthService {
         'mode': 'sign-in',
       });
     } catch (e) {
-      if (e is DioException) {
-        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
-      }
-      throw Exception(e.toString());
+      throw Exception(_readableError(e));
     }
   }
 
@@ -53,10 +50,7 @@ class AuthService {
         'profile': profile.toJson(),
       });
     } catch (e) {
-      if (e is DioException) {
-        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
-      }
-      throw Exception(e.toString());
+      throw Exception(_readableError(e));
     }
   }
 
@@ -76,11 +70,26 @@ class AuthService {
       );
       return AuthUser.fromJson(data['user'] as Map<String, dynamic>);
     } catch (e) {
-      if (e is DioException) {
-        throw Exception('API Error (${e.response?.statusCode}): ${e.message}');
-      }
-      throw Exception(e.toString());
+      throw Exception(_readableError(e));
     }
+  }
+
+  /// Turns a failed auth call into one short sentence for the user, using
+  /// the backend's own message (e.g. Supabase's "For security purposes, you
+  /// can only request this after 31 seconds.") instead of Dio's long
+  /// technical "API Error (429): This exception was thrown because..." text.
+  static String _readableError(Object e) {
+    if (e is DioException) {
+      final status = e.response?.statusCode;
+      if (status == null) {
+        return 'Could not reach the server. Check your connection and try again.';
+      }
+      final fallback = status == 429
+          ? 'Too many attempts. Please wait a minute and try again.'
+          : 'Something went wrong. Please try again.';
+      return apiErrorMessage(e, fallback: fallback);
+    }
+    return e.toString().replaceFirst('Exception: ', '');
   }
 
   static Future<void> logout() async {

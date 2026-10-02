@@ -1,4 +1,5 @@
 // lib/screens/auth/verify_email_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -29,6 +30,28 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   String? _formError;
   bool _submitting = false;
   bool _resending = false;
+
+  // Supabase sends at most one code per email every 60 seconds. A code was
+  // just sent when this screen opened, so Resend starts on a countdown.
+  static const _resendCooldown = 60;
+  int _secondsLeft = _resendCooldown;
+  Timer? _cooldownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCooldown(_resendCooldown);
+  }
+
+  void _startCooldown(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() => _secondsLeft = seconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _secondsLeft--);
+      if (_secondsLeft <= 0) t.cancel();
+    });
+  }
 
   Future<void> _submit() async {
     final code = _codeController.text.trim();
@@ -68,11 +91,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         await AuthService.sendSignInOtp(widget.email);
       }
       if (!mounted) return;
+      _startCooldown(_resendCooldown);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('A new code has been sent.')),
       );
     } catch (e) {
       if (!mounted) return;
+      // "...only request this after 31 seconds." -> count down from 31.
+      final wait = RegExp(r'after (\d+) seconds?').firstMatch(e.toString());
+      if (wait != null) _startCooldown(int.parse(wait.group(1)!));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e is Exception ? e.toString().replaceFirst('Exception: ', '') : "Couldn't resend the code. Please try again.")),
       );
@@ -83,6 +110,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _codeController.dispose();
     super.dispose();
   }
@@ -130,8 +158,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             const SizedBox(height: 12),
             Center(
               child: TextButton(
-                onPressed: _resending ? null : _resend,
-                child: Text(_resending ? 'Sending…' : "Didn't get a code? Resend"),
+                onPressed: (_resending || _secondsLeft > 0) ? null : _resend,
+                child: Text(_resending
+                    ? 'Sending…'
+                    : _secondsLeft > 0
+                        ? 'Resend code in ${_secondsLeft}s'
+                        : "Didn't get a code? Resend"),
               ),
             ),
           ],
